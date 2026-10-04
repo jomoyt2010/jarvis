@@ -49,6 +49,7 @@ object Notifications {
             .setContentTitle("JARVIS")
             .setContentText("Ich bin bereit.")
             .setOngoing(true).setSilent(true)
+            .addAction(0, "Sprechen", PendingIntent.getActivity(ctx, 5, Intent(ctx, MainActivity::class.java).putExtra("listen", true), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE))
             .setContentIntent(openApp(ctx))
             .build()
 

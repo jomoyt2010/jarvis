@@ -98,7 +98,7 @@ object Provisioner {
             if (web) Check("Web", Status.OK, "verfügbar") else Check("Web", Status.WARN, "keine Verbindung"),
             if (exact) Check("Erinnerungen", Status.OK, "verfügbar") else Check("Erinnerungen", Status.WARN, "nur ungefähre Zeiten"),
             if (JarvisService.running) Check("Hintergrund", Status.OK, "aktiv") else Check("Hintergrund", Status.WARN, "nicht aktiv"),
-            Check("KI", Status.PENDING, "folgt in Phase 3")
+            if (Secrets.apiKey(ctx).isNotBlank()) Check("KI", Status.OK, "Schlüssel gespeichert") else Check("KI", Status.PENDING, "Schlüssel im Chat einfügen")
         )
     }
 }

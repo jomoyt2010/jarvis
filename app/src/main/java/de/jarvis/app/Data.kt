@@ -35,6 +35,7 @@ interface ReminderDao {
 @Dao
 interface MemoryDao {
     @Query("SELECT * FROM memories ORDER BY createdAt DESC") fun observeAll(): Flow<List<Memory>>
+    @Query("SELECT * FROM memories ORDER BY createdAt") suspend fun all(): List<Memory>
     @Insert suspend fun insert(m: Memory): Long
     @Query("DELETE FROM memories WHERE id = :id") suspend fun delete(id: Long)
 }

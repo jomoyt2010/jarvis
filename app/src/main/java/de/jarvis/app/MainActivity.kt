@@ -1,5 +1,6 @@
 package de.jarvis.app
 
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
@@ -19,21 +20,32 @@ import kotlinx.coroutines.delay
 
 class MainActivity : ComponentActivity() {
     private var resumeTick by mutableIntStateOf(0)
+    private var listenTick by mutableIntStateOf(0)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val transparent = android.graphics.Color.TRANSPARENT
         enableEdgeToEdge(SystemBarStyle.dark(transparent), SystemBarStyle.dark(transparent))
         val prefs = Prefs(this)
+        handleIntent(intent)
         setContent {
             JarvisTheme {
                 Surface(Modifier.fillMaxSize().systemBarsPadding(), color = MaterialTheme.colorScheme.background) {
                     var setupDone by remember { mutableStateOf(prefs.setupDone) }
                     if (!setupDone) SetupFlow(resumeTick, prefs) { setupDone = true }
-                    else HomeScreen(resumeTick) { prefs.setupDone = false; prefs.skipped = emptySet(); setupDone = false }
+                    else MainShell(resumeTick, listenTick) { prefs.setupDone = false; prefs.skipped = emptySet(); setupDone = false }
                 }
             }
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        handleIntent(intent)
+    }
+
+    private fun handleIntent(i: Intent?) {
+        if (i?.getBooleanExtra("listen", false) == true) { listenTick++; i.removeExtra("listen") }
     }
 
     override fun onResume() { super.onResume(); resumeTick++ }
@@ -58,7 +70,6 @@ fun SetupFlow(resumeTick: Int, prefs: Prefs, onFinished: () -> Unit) {
         Perms.request(ctx, step, retry) { launcher.launch(it) }
     }
 
-    // Automatisch weiter: Systemdialog bzw. Einstellungsseite oeffnet sich nach kurzem Hinweis von selbst.
     LaunchedEffect(started, current) {
         if (started && current != null && current !in attempted) {
             delay(1800)
