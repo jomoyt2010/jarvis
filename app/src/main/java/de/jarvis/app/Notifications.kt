@@ -34,7 +34,7 @@ object Notifications {
                 setSound(
                     RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE),
                     AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_NOTIFICATION_RINGTONE)
-                        .setContentType(AudioAttributes.CONTENT_TYPE_SONIC).build())
+                        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION).build())
                 enableVibration(true)
                 vibrationPattern = longArrayOf(0, 600, 400, 600, 400)
             })
