@@ -98,6 +98,8 @@ class BootReceiver : BroadcastReceiver() {
             try {
                 Reminders.restoreAll(app)
                 if (Prefs(app).setupDone) JarvisService.start(app)
+                if (Prefs(app).setupDone && appPrefs(app).getBoolean("wake", false))
+                    Notifications.showInfo(app, 77, "Hey JARVIS ist aus", "Tippe hier, um die Sprachaktivierung neu zu starten.", true)
             } finally { pending.finish() }
         }
     }

@@ -75,6 +75,7 @@ object Provisioner {
         AppDb.get(ctx).openHelper.writableDatabase // Datenbank + Memory-System anlegen
         Reminders.restoreAll(ctx)
         JarvisService.start(ctx)
+        Proactive.schedule(ctx)
         delay(600)
 
         val calendar = if (Perms.isGranted(ctx, Step.CALENDAR)) {
@@ -92,9 +93,9 @@ object Provisioner {
         val exact = Perms.isGranted(ctx, Step.EXACT_ALARM) && Perms.isGranted(ctx, Step.NOTIFICATIONS)
 
         listOf(
-            Check("Google", Status.PENDING, "folgt in Phase 2"),
+            if (GoogleAuth.connected(ctx)) Check("Google", Status.OK, "verbunden") else Check("Google", Status.PENDING, "nicht verbunden"),
             calendar,
-            Check("Gmail", Status.PENDING, "folgt in Phase 2"),
+            if (GoogleAuth.connected(ctx)) Check("Gmail", Status.OK, "verfügbar") else Check("Gmail", Status.PENDING, "braucht Google"),
             if (web) Check("Web", Status.OK, "verfügbar") else Check("Web", Status.WARN, "keine Verbindung"),
             if (exact) Check("Erinnerungen", Status.OK, "verfügbar") else Check("Erinnerungen", Status.WARN, "nur ungefähre Zeiten"),
             if (JarvisService.running) Check("Hintergrund", Status.OK, "aktiv") else Check("Hintergrund", Status.WARN, "nicht aktiv"),

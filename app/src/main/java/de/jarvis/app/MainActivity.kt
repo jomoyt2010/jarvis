@@ -45,7 +45,9 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun handleIntent(i: Intent?) {
-        if (i?.getBooleanExtra("listen", false) == true) { listenTick++; i.removeExtra("listen") }
+        if (i == null) return
+        if (i.getBooleanExtra("listen", false)) { listenTick++; i.removeExtra("listen") }
+        if (i.getBooleanExtra("wake", false)) { ListenService.start(this); i.removeExtra("wake") }
     }
 
     override fun onResume() { super.onResume(); resumeTick++ }
@@ -58,6 +60,10 @@ fun SetupFlow(resumeTick: Int, prefs: Prefs, onFinished: () -> Unit) {
     var tick by remember { mutableIntStateOf(0) }
     var skipped by remember { mutableStateOf(prefs.skipped) }
     var attempted by remember { mutableStateOf(setOf<Step>()) }
+    var hasKey by remember { mutableStateOf(Secrets.apiKey(ctx).isNotBlank()) }
+    var googleOk by remember { mutableStateOf(GoogleAuth.connected(ctx)) }
+    var googleErr by remember { mutableStateOf("") }
+    val connect = rememberGoogleConnect { ok, msg -> googleOk = ok; googleErr = if (ok) "" else msg }
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { tick++ }
 
     val current = remember(resumeTick, tick, skipped) {
@@ -69,6 +75,7 @@ fun SetupFlow(resumeTick: Int, prefs: Prefs, onFinished: () -> Unit) {
         attempted = attempted + step
         Perms.request(ctx, step, retry) { launcher.launch(it) }
     }
+    fun skip(name: String) { skipped = skipped + name; prefs.skipped = skipped }
 
     LaunchedEffect(started, current) {
         if (started && current != null && current !in attempted) {
@@ -85,7 +92,9 @@ fun SetupFlow(resumeTick: Int, prefs: Prefs, onFinished: () -> Unit) {
             total = Step.entries.size,
             retry = current in attempted,
             onGo = { request(current) },
-            onSkip = { skipped = skipped + current.name; prefs.skipped = skipped })
+            onSkip = { skip(current.name) })
+        !hasKey && "AI" !in skipped -> AiKeyScreen(onSaved = { hasKey = true }, onSkip = { skip("AI") })
+        !googleOk && "GOOGLE" !in skipped -> GoogleScreen(googleErr, connect) { skip("GOOGLE") }
         else -> ReadyScreen { prefs.setupDone = true; onFinished() }
     }
 }

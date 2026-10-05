@@ -17,3 +17,10 @@ Google-Login/Gmail/Kalender-Tools (Phase 2), KI/Websuche/Sprache/Memory-UI (Phas
 1. Auf github.com ein kostenloses Konto und ein neues Repository anlegen.
 2. Projektinhalt hochladen (inkl. versteckter Ordner `.github`). Am einfachsten: Repository → Code → Codespaces (im Browser), ZIP hochladen, im Terminal `unzip JARVIS-Phase1.zip && cp -r JARVIS/. . && rm -r JARVIS JARVIS-Phase1.zip`, dann committen und pushen.
 3. Reiter „Actions" → „Build APK" abwarten (ca. 5 Min.) → unten bei „Artifacts" `JARVIS-apk` herunterladen, entpacken, installieren.
+
+## Version 0.2
+KI: Google Gemini (kostenloser Schlüssel von aistudio.google.com/apikey). Stimme: Gemini-TTS + Roboter-Effekt, Fallback Handy-Stimme.
+JARVIS-Anrufe sind echte Gespräche (klingeln, annehmen, abwechselnd sprechen, auflegen).
+Gmail: Google-Cloud-Projekt mit Android-OAuth-Client nötig. Paketname: de.jarvis.app, SHA-1 des mitgelieferten Schlüssels:
+A7:27:B3:4A:1F:59:D4:DE:C4:73:52:00:BD:99:A0:9F:18:FF:92:29
+Wichtig: Repository auf "Private" stellen (der Signaturschlüssel liegt im Repo). Alte Version vorher deinstallieren (neue Signatur).

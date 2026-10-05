@@ -37,7 +37,7 @@ fun JarvisTheme(content: @Composable () -> Unit) = MaterialTheme(
     ), content = content)
 
 @Composable
-private fun Centered(content: @Composable ColumnScope.() -> Unit) = Column(
+fun Centered(content: @Composable ColumnScope.() -> Unit) = Column(
     Modifier.fillMaxSize().padding(28.dp),
     horizontalAlignment = Alignment.CenterHorizontally,
     verticalArrangement = Arrangement.Center, content = content)

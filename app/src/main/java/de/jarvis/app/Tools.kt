@@ -11,6 +11,7 @@ import android.provider.CalendarContract.Events
 import android.provider.CalendarContract.Instances
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.withTimeoutOrNull
 import org.json.JSONObject
 import java.text.SimpleDateFormat
 import java.time.LocalDateTime
@@ -31,18 +32,20 @@ object ToolRegistry {
     val all: List<JarvisTool> = listOf(
         CreateReminderTool, ListRemindersTool, DeleteReminderTool,
         GetCalendarTool, CreateEventTool, DeleteEventTool,
-        RememberTool, ForgetTool, DeviceStatusTool)
+        RememberTool, ForgetTool, DeviceStatusTool,
+        SearchWebTool, ListMailTool, ReadMailTool, SendMailTool,
+        CreateWatchTool, ListWatchesTool, DeleteWatchTool)
     fun find(name: String) = all.firstOrNull { it.name == name }
 }
 
 /** Bestaetigungsdialog fuer heikle Aktionen (z. B. Termin loeschen). */
 object Confirm {
-    class Req(val text: String, val result: CompletableDeferred<Boolean>)
+    class Req(val title: String, val text: String, val yes: String, val no: String, val result: CompletableDeferred<Boolean>)
     val pending = MutableStateFlow<Req?>(null)
-    suspend fun ask(text: String): Boolean {
+    suspend fun ask(text: String, yes: String = "Ja", no: String = "Abbrechen", title: String = "Bestätigen"): Boolean {
         val d = CompletableDeferred<Boolean>()
-        pending.value = Req(text, d)
-        val r = d.await()
+        pending.value = Req(title, text, yes, no, d)
+        val r = withTimeoutOrNull(90_000) { d.await() } ?: false
         pending.value = null
         return r
     }

@@ -13,6 +13,7 @@
     <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <uses-permission android:name="android.permission.VIBRATE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
 
     <queries>
         <intent><action android:name="android.speech.RecognitionService" /></intent>
@@ -43,6 +44,11 @@
             <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                 android:value="personal_assistant_reminders" />
         </service>
+
+        <service android:name=".ListenService" android:exported="false"
+            android:foregroundServiceType="microphone" />
+
+        <receiver android:name=".MissedCallReceiver" android:exported="false" />
 
         <receiver android:name=".ReminderReceiver" android:exported="false" />
 
