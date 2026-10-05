@@ -2,6 +2,8 @@ package de.jarvis.app
 
 import android.app.TimePickerDialog
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.*
@@ -37,10 +39,12 @@ fun JarvisTheme(content: @Composable () -> Unit) = MaterialTheme(
     ), content = content)
 
 @Composable
-fun Centered(content: @Composable ColumnScope.() -> Unit) = Column(
-    Modifier.fillMaxSize().padding(28.dp),
-    horizontalAlignment = Alignment.CenterHorizontally,
-    verticalArrangement = Arrangement.Center, content = content)
+fun Centered(content: @Composable ColumnScope.() -> Unit) = BoxWithConstraints(Modifier.fillMaxSize()) {
+    Column(
+        Modifier.fillMaxWidth().heightIn(min = maxHeight).verticalScroll(rememberScrollState()).padding(28.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center, content = content)
+}
 
 @Composable
 private fun Logo() = Text("JARVIS", fontSize = 38.sp, fontWeight = FontWeight.Bold, color = Cyan, letterSpacing = 6.sp)

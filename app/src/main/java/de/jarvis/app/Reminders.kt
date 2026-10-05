@@ -60,7 +60,7 @@ object Reminders {
         val dao = AppDb.get(ctx).reminders()
         val r = dao.get(id) ?: return
         if (r.done) return
-        if (r.asCall) Notifications.showCall(ctx, r.text) else Notifications.showReminder(ctx, r.id, r.text)
+        if (r.asCall) JarvisCalls.ring(ctx, r.text) else Notifications.showReminder(ctx, r.id, r.text)
         val next = ReminderScheduler.nextTrigger(r)
         if (next != null) {
             val u = r.copy(triggerAt = next)

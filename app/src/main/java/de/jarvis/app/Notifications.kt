@@ -7,6 +7,7 @@ import android.content.Intent
 import android.media.AudioAttributes
 import android.media.RingtoneManager
 import androidx.core.app.NotificationCompat
+import androidx.core.app.Person
 import androidx.core.app.NotificationManagerCompat
 
 class JarvisApp : Application() {
@@ -22,6 +23,8 @@ object Notifications {
     const val CH_REMINDER = "jarvis_reminder"
     const val CH_CALL = "jarvis_call"
     const val CH_INFO = "jarvis_info"
+    const val CH_ONGOING = "jarvis_ongoing"
+    const val ONGOING_ID = 5
     const val SERVICE_ID = 1
     const val CALL_ID = 2
 
@@ -33,6 +36,8 @@ object Notifications {
             NotificationChannel(CH_REMINDER, "Erinnerungen", NotificationManager.IMPORTANCE_HIGH))
         nm.createNotificationChannel(
             NotificationChannel(CH_INFO, "Hinweise von JARVIS", NotificationManager.IMPORTANCE_DEFAULT))
+        nm.createNotificationChannel(
+            NotificationChannel(CH_ONGOING, "Laufender Anruf", NotificationManager.IMPORTANCE_LOW))
         nm.createNotificationChannel(
             NotificationChannel(CH_CALL, "JARVIS-Anruf", NotificationManager.IMPORTANCE_HIGH).apply {
                 setSound(
@@ -86,31 +91,50 @@ object Notifications {
         NotificationManagerCompat.from(ctx).notify(10_000 + id.toInt(), n)
     }
 
-    /** Simulierter Anruf (kein echter Telefonanruf): High-Priority + Full-Screen-Intent. */
+    /** Eingehender JARVIS-Anruf im System-Anrufstil (Annehmen/Ablehnen), Full-Screen auf dem Sperrbildschirm. */
     @SuppressLint("MissingPermission")
     fun showCall(ctx: Context, text: String) {
+        JarvisCalls.shown = true
         if (!NotificationManagerCompat.from(ctx).areNotificationsEnabled()) return
-        val intent = Intent(ctx, CallActivity::class.java)
-            .putExtra("text", text).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
-        val full = PendingIntent.getActivity(ctx, 1, intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
-        val n = NotificationCompat.Builder(ctx, CH_CALL)
-            .setSmallIcon(R.drawable.ic_jarvis)
-            .setContentTitle("JARVIS")
-            .setContentText("Eingehender Anruf")
-            .setPriority(NotificationCompat.PRIORITY_HIGH)
-            .setCategory(NotificationCompat.CATEGORY_CALL)
-            .setOngoing(true)
-            .setTimeoutAfter(60_000)
-            .setFullScreenIntent(full, true)
-            .setContentIntent(full)
-            .build()
+        val fl = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        val nf = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+        val full = PendingIntent.getActivity(ctx, 1, Intent(ctx, CallActivity::class.java).putExtra("text", text).addFlags(nf), fl)
+        val answer = PendingIntent.getActivity(ctx, 8, Intent(ctx, CallActivity::class.java).putExtra("text", text).putExtra("accept", true).addFlags(nf), fl)
+        val decline = PendingIntent.getBroadcast(ctx, 9, Intent(ctx, CallActionReceiver::class.java).setAction(CallActionReceiver.ACTION_DECLINE), fl)
+        val person = Person.Builder().setName("JARVIS").setImportant(true).build()
+        fun base() = NotificationCompat.Builder(ctx, CH_CALL)
+            .setSmallIcon(R.drawable.ic_jarvis).setContentTitle("JARVIS").setContentText("Eingehender Anruf")
+            .setPriority(NotificationCompat.PRIORITY_MAX).setCategory(NotificationCompat.CATEGORY_CALL)
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            .setOngoing(true).setTimeoutAfter(60_000).setFullScreenIntent(full, true).setContentIntent(full)
+        val n = try {
+            base().setStyle(NotificationCompat.CallStyle.forIncomingCall(person, decline, answer)).addPerson(person).build()
+        } catch (e: Exception) {
+            base().addAction(0, "Ablehnen", decline).addAction(0, "Annehmen", answer).build()
+        }
         n.flags = n.flags or Notification.FLAG_INSISTENT // Klingeln bis angenommen/abgelehnt
         NotificationManagerCompat.from(ctx).notify(CALL_ID, n)
         // Nach 45 s unbeantwortet -> "Verpasster Anruf"
-        val miss = PendingIntent.getBroadcast(ctx, 2, Intent(ctx, MissedCallReceiver::class.java).putExtra("text", text),
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+        val miss = PendingIntent.getBroadcast(ctx, 2, Intent(ctx, MissedCallReceiver::class.java).putExtra("text", text), fl)
         ctx.getSystemService(AlarmManager::class.java)
             .setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, System.currentTimeMillis() + 45_000, miss)
+    }
+
+    fun callActive(ctx: Context): Boolean =
+        ctx.getSystemService(NotificationManager::class.java).activeNotifications.any { it.id == CALL_ID }
+
+    /** Laufendes Gespraech: Zeitzaehler + Auflegen in der Benachrichtigung. */
+    @SuppressLint("MissingPermission")
+    fun showOngoingCall(ctx: Context) {
+        val open = PendingIntent.getActivity(ctx, 10, Intent(ctx, CallActivity::class.java)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT), PendingIntent.FLAG_IMMUTABLE)
+        val hang = PendingIntent.getBroadcast(ctx, 11, Intent(ctx, CallActionReceiver::class.java)
+            .setAction(CallActionReceiver.ACTION_HANGUP), PendingIntent.FLAG_IMMUTABLE)
+        val n = NotificationCompat.Builder(ctx, CH_ONGOING)
+            .setSmallIcon(R.drawable.ic_jarvis).setContentTitle("Anruf mit JARVIS").setContentText("Tippen, um zum Gespräch zurückzukehren")
+            .setOngoing(true).setUsesChronometer(true).setWhen(System.currentTimeMillis())
+            .setCategory(NotificationCompat.CATEGORY_CALL).setContentIntent(open).addAction(0, "Auflegen", hang).build()
+        NotificationManagerCompat.from(ctx).notify(ONGOING_ID, n)
     }
 
     @SuppressLint("MissingPermission")
@@ -133,6 +157,7 @@ class MissedCallReceiver : android.content.BroadcastReceiver() {
         val nm = ctx.getSystemService(NotificationManager::class.java)
         if (nm.activeNotifications.none { it.id == Notifications.CALL_ID }) return
         nm.cancel(Notifications.CALL_ID)
+        JarvisCalls.ended(android.telecom.DisconnectCause.MISSED)
         Notifications.showMissedCall(ctx, intent.getStringExtra("text") ?: "")
     }
 }

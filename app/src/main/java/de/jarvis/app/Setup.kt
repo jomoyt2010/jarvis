@@ -76,6 +76,7 @@ object Provisioner {
         Reminders.restoreAll(ctx)
         JarvisService.start(ctx)
         Proactive.schedule(ctx)
+        JarvisCalls.register(ctx)
         delay(600)
 
         val calendar = if (Perms.isGranted(ctx, Step.CALENDAR)) {

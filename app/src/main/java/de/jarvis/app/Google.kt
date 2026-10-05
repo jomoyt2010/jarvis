@@ -1,6 +1,7 @@
 package de.jarvis.app
 
 import android.content.Context
+import android.content.pm.PackageManager
 import android.text.Html
 import android.util.Base64
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -16,6 +17,7 @@ import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLEncoder
+import java.security.MessageDigest
 
 class NeedGoogle : Exception("Dafür brauche ich deine Erlaubnis: Das Google-Konto ist nicht verbunden. Bitte in den Einstellungen verbinden.")
 
@@ -25,6 +27,12 @@ object GoogleAuth {
         Scope("https://www.googleapis.com/auth/gmail.readonly"),
         Scope("https://www.googleapis.com/auth/gmail.send"))
     fun request(): AuthorizationRequest = AuthorizationRequest.builder().setRequestedScopes(SCOPES).build()
+    /** SHA-1 des Signaturschluessels dieser App (wird im Google-OAuth-Client eingetragen). */
+    fun sha1(ctx: Context): String = try {
+        val sig = ctx.packageManager.getPackageInfo(ctx.packageName, PackageManager.GET_SIGNING_CERTIFICATES)
+            .signingInfo?.apkContentsSigners?.firstOrNull()
+        if (sig == null) "?" else MessageDigest.getInstance("SHA-1").digest(sig.toByteArray()).joinToString(":") { "%02X".format(it) }
+    } catch (e: Exception) { "?" }
     fun connected(ctx: Context) = appPrefs(ctx).getBoolean("google_ok", false)
     fun setConnected(ctx: Context, v: Boolean) { appPrefs(ctx).edit().putBoolean("google_ok", v).apply() }
 
@@ -51,7 +59,15 @@ fun rememberGoogleConnect(onDone: (Boolean, String) -> Unit): () -> Unit {
                 if (r.hasResolution()) r.pendingIntent?.intentSender?.let { launcher.launch(IntentSenderRequest.Builder(it).build()) }
                 else { GoogleAuth.setConnected(ctx, true); onDone(true, "") }
             }
-            .addOnFailureListener { onDone(false, it.message ?: "") }
+            .addOnFailureListener {
+                val code = (it as? com.google.android.gms.common.api.ApiException)?.statusCode
+                onDone(false, when (code) {
+                    10 -> "Fehler 10: Paketname oder SHA-1 im Google-OAuth-Client stimmen nicht."
+                    7 -> "Keine Internetverbindung."
+                    12501, 16 -> "Abgebrochen."
+                    else -> "Fehler $code: ${it.message}"
+                })
+            }
     }
     return start
 }

@@ -81,7 +81,7 @@ class ListenService : Service() {
     private fun handle(cmd: String) {
         scope.launch {
             Ai.chat.add(ChatMsg(true, cmd))
-            val r = withContext(Dispatchers.IO) { Ai.ask(applicationContext, cmd) }
+            val r = withContext(Dispatchers.IO) { Ai.ask(applicationContext, cmd, voiceMode = true) }
             Ai.chat.add(ChatMsg(false, r.text, r.sources))
             Voice.speak(applicationContext, r.text)
             listen(false)

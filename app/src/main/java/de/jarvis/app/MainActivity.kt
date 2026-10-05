@@ -9,6 +9,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -30,7 +31,7 @@ class MainActivity : ComponentActivity() {
         handleIntent(intent)
         setContent {
             JarvisTheme {
-                Surface(Modifier.fillMaxSize().systemBarsPadding(), color = MaterialTheme.colorScheme.background) {
+                Surface(Modifier.fillMaxSize().systemBarsPadding().imePadding(), color = MaterialTheme.colorScheme.background) {
                     var setupDone by remember { mutableStateOf(prefs.setupDone) }
                     if (!setupDone) SetupFlow(resumeTick, prefs) { setupDone = true }
                     else MainShell(resumeTick, listenTick) { prefs.setupDone = false; prefs.skipped = emptySet(); setupDone = false }

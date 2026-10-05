@@ -1,6 +1,8 @@
 package de.jarvis.app
 
 import android.Manifest
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
@@ -9,21 +11,63 @@ import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.FileProvider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.File
+
+// ---------- Hilfen ----------
+private fun AnnotatedString.Builder.inl(t: String) {
+    var i = 0
+    for (m in Regex("\\*\\*(.+?)\\*\\*").findAll(t)) {
+        append(t.substring(i, m.range.first))
+        withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { append(m.groupValues[1]) }
+        i = m.range.last + 1
+    }
+    append(t.substring(i))
+}
+
+/** Mini-Markdown: **fett**, Ueberschriften, Listen. */
+fun md(s: String): AnnotatedString = buildAnnotatedString {
+    val lines = s.lines()
+    lines.forEachIndexed { idx, line ->
+        val head = Regex("^#{1,3}\\s+(.*)").matchEntire(line)
+        val bullet = Regex("^\\s*[-*]\\s+(.*)").matchEntire(line)
+        when {
+            head != null -> withStyle(SpanStyle(fontWeight = FontWeight.Bold, color = Cyan)) { inl(head.groupValues[1]) }
+            bullet != null -> { append("• "); inl(bullet.groupValues[1]) }
+            else -> inl(line)
+        }
+        if (idx < lines.lastIndex) append("\n")
+    }
+}
 
 @Composable
 fun KeyField(onSaved: () -> Unit) {
@@ -64,13 +108,14 @@ fun GoogleScreen(error: String, onConnect: () -> Unit, onSkip: () -> Unit) = Cen
     Text("Für Gmail melde dich einmal mit Google an. Ich sehe dein Passwort nie.", textAlign = TextAlign.Center)
     if (error.isNotBlank()) {
         Spacer(Modifier.height(12.dp))
-        Text("Das hat nicht geklappt. Wahrscheinlich ist die Google-Einrichtung (OAuth) noch nicht fertig.", color = Amber, textAlign = TextAlign.Center)
+        Text(error, color = Amber, textAlign = TextAlign.Center)
     }
     Spacer(Modifier.height(24.dp))
     Button(onClick = onConnect) { Text("Google-Konto verbinden") }
     TextButton(onClick = onSkip) { Text("Später") }
 }
 
+// ---------- Chat ----------
 @Composable
 fun ChatScreen(listenTick: Int) {
     val ctx = LocalContext.current
@@ -79,20 +124,45 @@ fun ChatScreen(listenTick: Int) {
     var busy by remember { mutableStateOf(false) }
     var hasKey by remember { mutableStateOf(Secrets.apiKey(ctx).isNotBlank()) }
     var listening by remember { mutableStateOf(false) }
+    var menu by remember { mutableStateOf(false) }
+    var cameraUri by remember { mutableStateOf<Uri?>(null) }
+    val pending = remember { mutableStateListOf<Attachment>() }
     val recognizer = remember { if (SpeechRecognizer.isRecognitionAvailable(ctx)) SpeechRecognizer.createSpeechRecognizer(ctx) else null }
     val micLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
     val listState = rememberLazyListState()
+    val imeUp = WindowInsets.ime.getBottom(LocalDensity.current) > 0
     DisposableEffect(Unit) { onDispose { recognizer?.destroy() } }
 
-    fun send(t: String) {
-        val q = t.trim()
-        if (q.isEmpty() || busy) return
-        Ai.chat.add(ChatMsg(true, q)); input = ""; busy = true
+    fun addUris(uris: List<Uri>) {
         scope.launch {
-            val r = withContext(Dispatchers.IO) { Ai.ask(ctx.applicationContext, q) }
-            Ai.chat.add(ChatMsg(false, r.text, r.sources))
+            val loaded = withContext(Dispatchers.IO) { uris.map { Attachments.load(ctx, it) to Attachments.name(ctx, it) } }
+            loaded.forEach { (a, n) ->
+                if (a == null) Ai.chat.add(ChatMsg(false, "„$n“ kann ich nicht lesen. Unterstützt: Fotos, PDF, Text- und Audiodateien (bis 12 MB)."))
+                else pending.add(a)
+            }
+        }
+    }
+    val pick = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { addUris(it) }
+    val camera = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { ok -> if (ok) cameraUri?.let { addUris(listOf(it)) } }
+
+    fun takePhoto() {
+        val dir = File(ctx.cacheDir, "images").apply { mkdirs() }
+        val u = FileProvider.getUriForFile(ctx, "${ctx.packageName}.fileprovider", File(dir, "foto_${System.currentTimeMillis()}.jpg"))
+        cameraUri = u
+        camera.launch(u)
+    }
+
+    fun send(t: String, viaMic: Boolean = false) {
+        val q = t.trim()
+        if ((q.isEmpty() && pending.isEmpty()) || busy) return
+        val files = pending.toList(); pending.clear()
+        Ai.chat.add(ChatMsg(true, q, files = files.map { it.name }, thumbs = files.mapNotNull { it.thumb }))
+        input = ""; busy = true
+        scope.launch {
+            val r = withContext(Dispatchers.IO) { Ai.ask(ctx.applicationContext, q, files, viaMic) }
+            Ai.chat.add(ChatMsg(false, r.text, r.sources, model = r.model))
             busy = false
-            if (ttsEnabled(ctx)) Voice.speak(ctx.applicationContext, r.text)
+            if (ttsEnabled(ctx) && (viaMic || r.text.length <= 400)) Voice.speak(ctx.applicationContext, r.text)
         }
     }
 
@@ -112,7 +182,7 @@ fun ChatScreen(listenTick: Int) {
             override fun onResults(results: Bundle?) {
                 listening = false
                 val t = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull()
-                if (t != null) send(t)
+                if (t != null) send(t, true)
             }
         })
         recognizer.startListening(Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
@@ -122,14 +192,14 @@ fun ChatScreen(listenTick: Int) {
     }
 
     LaunchedEffect(listenTick) { if (listenTick > 0 && hasKey) startListening() }
-    LaunchedEffect(Ai.chat.size) { if (Ai.chat.isNotEmpty()) listState.animateScrollToItem(Ai.chat.size - 1) }
+    LaunchedEffect(Ai.chat.size, imeUp) { if (Ai.chat.isNotEmpty()) listState.animateScrollToItem(Ai.chat.size - 1) }
 
-    Column(Modifier.fillMaxSize().padding(16.dp)) {
+    Column(Modifier.fillMaxSize().padding(horizontal = 12.dp, vertical = 8.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("JARVIS", color = Cyan, fontSize = 22.sp, letterSpacing = 4.sp, modifier = Modifier.weight(1f))
             OutlinedButton(onClick = { ctx.startActivity(Intent(ctx, CallActivity::class.java).putExtra("outgoing", true)) }) { Text("📞 Anruf") }
         }
-        Spacer(Modifier.height(8.dp))
+        Spacer(Modifier.height(6.dp))
         if (!hasKey) {
             Card(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -139,23 +209,30 @@ fun ChatScreen(listenTick: Int) {
                     KeyField { hasKey = true }
                 }
             }
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(6.dp))
         }
         LazyColumn(Modifier.weight(1f), state = listState) {
             if (Ai.chat.isEmpty()) item {
-                Text("Tippe auf 🎤 und frag mich etwas, z. B. „Was habe ich morgen?“ oder „Ruf mich in 10 Minuten an.“", color = Color.Gray, modifier = Modifier.padding(8.dp))
+                Text("Schreib mir, häng ein Foto oder PDF an (📎) oder tippe auf 🎤. Zum Beispiel: „Was habe ich morgen?“ oder „Ruf mich in 10 Minuten an.“", color = Color.Gray, modifier = Modifier.padding(8.dp))
             }
             items(Ai.chat) { m ->
                 Row(Modifier.fillMaxWidth().padding(vertical = 4.dp),
                     horizontalArrangement = if (m.fromUser) Arrangement.End else Arrangement.Start) {
-                    Card(Modifier.widthIn(max = 300.dp),
+                    Card(if (m.fromUser) Modifier.widthIn(max = 320.dp) else Modifier.fillMaxWidth(0.95f),
                         colors = CardDefaults.cardColors(containerColor = if (m.fromUser) Color(0xFF0E3A4A) else Color(0xFF121A2B))) {
-                        Column(Modifier.padding(12.dp)) {
-                            Text(m.text)
-                            if (m.sources.isNotEmpty()) {
-                                Spacer(Modifier.height(6.dp))
-                                Text("Quellen:", fontSize = 11.sp, color = Cyan)
-                                m.sources.forEach { Text("• $it", fontSize = 11.sp, color = Color.Gray) }
+                        SelectionContainer {
+                            Column(Modifier.padding(12.dp)) {
+                                if (m.thumbs.isNotEmpty()) Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(bottom = 6.dp)) {
+                                    m.thumbs.forEach { Image(it.asImageBitmap(), null, Modifier.size(96.dp).clip(RoundedCornerShape(8.dp))) }
+                                }
+                                val others = m.files.size - m.thumbs.size
+                                if (others > 0) Text("📎 ${m.files.takeLast(others).joinToString(", ")}", fontSize = 12.sp, color = Color.Gray)
+                                if (m.text.isNotBlank()) Text(if (m.fromUser) AnnotatedString(m.text) else md(m.text))
+                                if (m.sources.isNotEmpty()) {
+                                    Spacer(Modifier.height(6.dp))
+                                    Text("Quellen: " + m.sources.joinToString(" · "), fontSize = 11.sp, color = Color.Gray)
+                                }
+                                if (!m.fromUser && m.model.isNotBlank()) Text(m.model, fontSize = 10.sp, color = Color(0xFF55657A), modifier = Modifier.padding(top = 4.dp))
                             }
                         }
                     }
@@ -164,16 +241,34 @@ fun ChatScreen(listenTick: Int) {
         }
         if (busy) Text("JARVIS denkt nach …", color = Color.Gray, fontSize = 12.sp)
         if (listening) Text("Ich höre zu …", color = Cyan, fontSize = 12.sp)
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        if (pending.isNotEmpty()) Row(Modifier.horizontalScroll(rememberScrollState()).padding(vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            pending.toList().forEach { a ->
+                Card { Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = 8.dp)) {
+                    a.thumb?.let { Image(it.asImageBitmap(), null, Modifier.size(36.dp).clip(RoundedCornerShape(6.dp))) }
+                    Text(a.name.take(18), fontSize = 12.sp, modifier = Modifier.padding(horizontal = 6.dp))
+                    TextButton(onClick = { pending.remove(a) }) { Text("✕") }
+                } }
+            }
+        }
+        Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+            Box {
+                TextButton(onClick = { menu = true }, contentPadding = PaddingValues(horizontal = 8.dp)) { Text("📎", fontSize = 20.sp) }
+                DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                    DropdownMenuItem(text = { Text("Foto aufnehmen") }, onClick = { menu = false; takePhoto() })
+                    DropdownMenuItem(text = { Text("Foto oder Datei wählen") }, onClick = { menu = false; pick.launch(arrayOf("image/*", "application/pdf", "text/*", "audio/*")) })
+                }
+            }
             OutlinedTextField(value = input, onValueChange = { input = it }, modifier = Modifier.weight(1f),
-                placeholder = { Text("Schreib mit JARVIS …") }, singleLine = true)
-            Button(onClick = { if (listening) recognizer?.stopListening() else startListening() },
-                contentPadding = PaddingValues(horizontal = 12.dp)) { Text(if (listening) "⏹" else "🎤") }
-            Button(onClick = { send(input) }, enabled = !busy, contentPadding = PaddingValues(horizontal = 12.dp)) { Text("➤") }
+                placeholder = { Text("Nachricht an JARVIS …") }, maxLines = 6)
+            TextButton(onClick = { if (listening) recognizer?.stopListening() else startListening() }, contentPadding = PaddingValues(horizontal = 8.dp)) {
+                Text(if (listening) "⏹" else "🎤", fontSize = 20.sp)
+            }
+            Button(onClick = { send(input) }, enabled = !busy, contentPadding = PaddingValues(horizontal = 14.dp)) { Text("➤") }
         }
     }
 }
 
+// ---------- Einstellungen ----------
 @Composable
 private fun SwitchRow(label: String, key: String, default: Boolean, onChange: ((Boolean) -> Unit)? = null) {
     val ctx = LocalContext.current
@@ -181,6 +276,23 @@ private fun SwitchRow(label: String, key: String, default: Boolean, onChange: ((
     Row(verticalAlignment = Alignment.CenterVertically) {
         Text(label, Modifier.weight(1f))
         Switch(checked = v, onCheckedChange = { v = it; appPrefs(ctx).edit().putBoolean(key, it).apply(); onChange?.invoke(it) })
+    }
+}
+
+@Composable
+private fun SecretRow(label: String, name: String, hint: String) {
+    val ctx = LocalContext.current
+    var has by remember { mutableStateOf(Secrets.get(ctx, name).isNotBlank()) }
+    var v by remember { mutableStateOf("") }
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text("$label: " + if (has) "gespeichert ✓" else "nicht gesetzt (optional)", fontSize = 13.sp)
+        Text(hint, fontSize = 11.sp, color = Color.Gray)
+        OutlinedTextField(value = v, onValueChange = { v = it }, singleLine = true, visualTransformation = PasswordVisualTransformation(),
+            modifier = Modifier.fillMaxWidth(), placeholder = { Text("Schlüssel einfügen") })
+        Row {
+            Button(enabled = v.trim().length > 10, onClick = { Secrets.put(ctx, name, v.trim()); v = ""; has = true }) { Text("Speichern") }
+            if (has) TextButton(onClick = { Secrets.put(ctx, name, ""); has = false }) { Text("Entfernen") }
+        }
     }
 }
 
@@ -194,47 +306,78 @@ fun SettingsScreen() {
     var googleOk by remember { mutableStateOf(GoogleAuth.connected(ctx)) }
     var googleErr by remember { mutableStateOf("") }
     val connect = rememberGoogleConnect { ok, msg -> googleOk = ok; googleErr = if (ok) "" else msg }
-    var voice by remember { mutableStateOf(appPrefs(ctx).getString("voice_name", "Charon") ?: "Charon") }
-    var robot by remember { mutableFloatStateOf(appPrefs(ctx).getFloat("robot", 0.6f)) }
+    var engine by remember { mutableStateOf(appPrefs(ctx).getString("voice_engine", "auto") ?: "auto") }
+    var edgeVoice by remember { mutableStateOf(appPrefs(ctx).getString("voice_edge", "de-DE-ConradNeural") ?: "de-DE-ConradNeural") }
+    var robot by remember { mutableFloatStateOf(appPrefs(ctx).getFloat("robot", 0.5f)) }
+    var testInfo by remember { mutableStateOf("") }
+    val sha = remember { GoogleAuth.sha1(ctx) }
 
-    LazyColumn(Modifier.fillMaxSize().padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        item { Text("Einstellungen", style = MaterialTheme.typography.titleLarge, color = Cyan) }
+    LazyColumn(Modifier.fillMaxSize().padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        item { Spacer(Modifier.height(8.dp)); Text("Einstellungen", style = MaterialTheme.typography.titleLarge, color = Cyan) }
 
         item { Text("KI", style = MaterialTheme.typography.titleMedium, color = Cyan) }
         item {
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text("Gemini-Schlüssel: " + if (hasKey) "gespeichert ✓" else "fehlt")
+                Text("Einfache Fragen laufen über ein schnelles Modell, schwere Aufgaben und Anhänge über ein stärkeres.", fontSize = 11.sp, color = Color.Gray)
                 GetKeyButton()
                 KeyField { hasKey = true }
                 if (hasKey) TextButton(onClick = { Secrets.setApiKey(ctx, ""); hasKey = false }) { Text("Schlüssel entfernen") }
             }
         }
 
-        item { Text("Google", style = MaterialTheme.typography.titleMedium, color = Cyan) }
+        item { Text("Google & Gmail", style = MaterialTheme.typography.titleMedium, color = Cyan) }
         item {
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text("Google-Konto: " + if (googleOk) "verbunden ✓" else "nicht verbunden")
-                if (googleErr.isNotBlank()) Text("Verbindung fehlgeschlagen: $googleErr", color = Amber, fontSize = 12.sp)
+                if (googleErr.isNotBlank()) Text(googleErr, color = Amber, fontSize = 12.sp)
                 if (!googleOk) Button(onClick = connect) { Text("Google-Konto verbinden") }
                 else TextButton(onClick = { GoogleAuth.setConnected(ctx, false); googleOk = false }) { Text("Trennen") }
+                Text("Für die Google-Einrichtung brauchst du diese Werte:", fontSize = 11.sp, color = Color.Gray)
+                SelectionContainer { Text("Paketname: ${ctx.packageName}\nSHA-1: $sha", fontSize = 12.sp) }
+                OutlinedButton(onClick = {
+                    ctx.getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("SHA-1", sha))
+                }) { Text("SHA-1 kopieren") }
             }
         }
 
         item { Text("Stimme", style = MaterialTheme.typography.titleMedium, color = Cyan) }
         item { SwitchRow("Antworten vorlesen", "tts", true) }
-        item { SwitchRow("Premium-Stimme (Gemini, limitiert)", "voice_gemini", true) }
         item {
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                listOf("Charon", "Orus", "Algenib").forEach {
-                    FilterChip(selected = voice == it, onClick = { voice = it; appPrefs(ctx).edit().putString("voice_name", it).apply() }, label = { Text(it) })
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text("Stimmen-Dienst (alle kostenlos)", fontSize = 13.sp)
+                val opts = listOf("auto" to "Automatisch", "edge" to "Edge-Neural", "google" to "Google Chirp", "eleven" to "ElevenLabs", "gemini" to "Gemini", "phone" to "Handy")
+                opts.chunked(3).forEach { row ->
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        row.forEach { (k, label) ->
+                            FilterChip(selected = engine == k, onClick = { engine = k; appPrefs(ctx).edit().putString("voice_engine", k).apply() },
+                                label = { Text(label, fontSize = 12.sp) })
+                        }
+                    }
+                }
+                Text("Edge-Stimme", fontSize = 13.sp, modifier = Modifier.padding(top = 4.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    listOf("de-DE-ConradNeural" to "Conrad", "de-DE-KillianNeural" to "Killian", "de-DE-FlorianMultilingualNeural" to "Florian").forEach { (k, label) ->
+                        FilterChip(selected = edgeVoice == k, onClick = { edgeVoice = k; appPrefs(ctx).edit().putString("voice_edge", k).apply() },
+                            label = { Text(label, fontSize = 12.sp) })
+                    }
                 }
             }
         }
         item {
             Text("Roboter-Effekt: ${(robot * 100).toInt()} %")
             Slider(value = robot, onValueChange = { robot = it }, onValueChangeFinished = { appPrefs(ctx).edit().putFloat("robot", robot).apply() })
-            OutlinedButton(onClick = { scope.launch { Voice.speak(ctx.applicationContext, "Guten Tag. Ich bin JARVIS. Alle Systeme laufen einwandfrei.") } }) { Text("Stimme testen") }
+            OutlinedButton(onClick = {
+                scope.launch {
+                    testInfo = "Erzeuge Stimme …"
+                    Voice.speak(ctx.applicationContext, "Guten Tag. Ich bin JARVIS. Alle Systeme laufen einwandfrei.")
+                    testInfo = "Gesprochen mit: ${Voice.lastEngine.ifBlank { "nichts" }}" + if (Voice.lastError.isNotBlank()) " · Probleme: ${Voice.lastError}" else ""
+                }
+            }) { Text("Stimme testen") }
+            if (testInfo.isNotBlank()) Text(testInfo, fontSize = 11.sp, color = Color.Gray)
         }
+        item { SecretRow("Google-Cloud-TTS-Schlüssel", "gtts_key", "Optional: Chirp-3-HD-Stimme, 1 Mio. Zeichen/Monat gratis (Google-Cloud-Konto mit Rechnungskonto nötig).") }
+        item { SecretRow("ElevenLabs-Schlüssel", "eleven_key", "Optional: elevenlabs.io, kostenloser Plan ohne Karte (ca. 10.000 Zeichen/Monat).") }
 
         item { Text("Hey JARVIS & Proaktiv", style = MaterialTheme.typography.titleMedium, color = Cyan) }
         item {
@@ -268,6 +411,7 @@ fun SettingsScreen() {
                 }
             }
         }
+        item { Spacer(Modifier.height(24.dp)) }
     }
 }
 
@@ -278,7 +422,7 @@ fun ConfirmHost() {
         AlertDialog(
             onDismissRequest = { r.result.complete(false) },
             title = { Text(r.title) },
-            text = { Text(r.text) },
+            text = { Column(Modifier.verticalScroll(rememberScrollState())) { Text(r.text) } },
             confirmButton = { TextButton(onClick = { r.result.complete(true) }) { Text(r.yes) } },
             dismissButton = { TextButton(onClick = { r.result.complete(false) }) { Text(r.no) } })
     }
@@ -287,6 +431,7 @@ fun ConfirmHost() {
 @Composable
 fun MainShell(resumeTick: Int, listenTick: Int, onRecheck: () -> Unit) {
     var tab by remember { mutableIntStateOf(0) }
+    val imeUp = WindowInsets.ime.getBottom(LocalDensity.current) > 0
     LaunchedEffect(listenTick) { if (listenTick > 0) tab = 0 }
     Column(Modifier.fillMaxSize()) {
         Box(Modifier.weight(1f)) {
@@ -296,7 +441,7 @@ fun MainShell(resumeTick: Int, listenTick: Int, onRecheck: () -> Unit) {
                 else -> SettingsScreen()
             }
         }
-        NavigationBar {
+        if (!imeUp) NavigationBar {
             listOf("💬" to "Chat", "⏰" to "Erinnerungen", "⚙️" to "Einstellungen").forEachIndexed { i, (icon, label) ->
                 NavigationBarItem(selected = tab == i, onClick = { tab = i }, icon = { Text(icon) }, label = { Text(label, fontSize = 11.sp) })
             }

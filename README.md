@@ -24,3 +24,9 @@ JARVIS-Anrufe sind echte Gespräche (klingeln, annehmen, abwechselnd sprechen, a
 Gmail: Google-Cloud-Projekt mit Android-OAuth-Client nötig. Paketname: de.jarvis.app, SHA-1 des mitgelieferten Schlüssels:
 A7:27:B3:4A:1F:59:D4:DE:C4:73:52:00:BD:99:A0:9F:18:FF:92:29
 Wichtig: Repository auf "Private" stellen (der Signaturschlüssel liegt im Repo). Alte Version vorher deinstallieren (neue Signatur).
+
+## Version 0.3
+Stimme: Edge-Neural (gratis, ohne Schlüssel) + optional Google Chirp / ElevenLabs / Gemini / Handy, danach KI-Effekt.
+KI-Routing: schnell (Flash-Lite) für einfache Fragen, Flash/Pro für schwere Aufgaben und Anhänge.
+Anrufe über Android-Telecom (selbstverwaltet) mit Anrufstil-Benachrichtigung; Auflegen immer sichtbar.
+Chat: lange Texte, Markdown, Foto/PDF/Text/Audio-Anhänge, Tastatur-sicheres Layout.

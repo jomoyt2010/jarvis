@@ -65,7 +65,7 @@ object Proactive {
 
     /** Meldet entweder als Hinweis oder (wenn aktiviert) als JARVIS-Anruf. */
     fun announce(c: Context, id: Int, title: String, text: String) {
-        if (appPrefs(c).getBoolean("pro_as_call", false)) Notifications.showCall(c, "$title. $text")
+        if (appPrefs(c).getBoolean("pro_as_call", false)) JarvisCalls.ring(c, "$title. $text")
         else Notifications.showInfo(c, id, title, text)
     }
 }
