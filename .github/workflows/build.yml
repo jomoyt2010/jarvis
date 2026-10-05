@@ -14,7 +14,18 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.9"
-      - run: gradle assembleDebug --no-daemon
+      - name: Build
+        run: |
+          set +e
+          gradle assembleDebug --no-daemon --console=plain 2>&1 | tee build.log
+          code=${PIPESTATUS[0]}
+          {
+            echo "## Fehler"
+            echo '~~~'
+            grep -E "^e: |error:|What went wrong|Execution failed|Could not|Unresolved|AAPT|Manifest merger" build.log | head -40
+            echo '~~~'
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit $code
       - uses: actions/upload-artifact@v4
         with:
           name: JARVIS-apk
