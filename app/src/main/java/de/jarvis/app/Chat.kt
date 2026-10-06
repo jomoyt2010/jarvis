@@ -116,7 +116,7 @@ fun ChatScreen(listenTick: Int) {
     var menu by remember { mutableStateOf(false) }
     var cameraUri by remember { mutableStateOf<Uri?>(null) }
     val pending = remember { mutableStateListOf<Attachment>() }
-    val recognizer = remember { if (SpeechRecognizer.isRecognitionAvailable(ctx)) SpeechRecognizer.createSpeechRecognizer(ctx) else null }
+    val recognizer = remember { if (Recog.available(ctx)) Recog.create(ctx) else null }
     val micLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
     val listState = rememberLazyListState()
     val imeUp = WindowInsets.ime.getBottom(LocalDensity.current) > 0
@@ -290,6 +290,7 @@ fun SettingsScreen(resumeTick: Int = 0) {
     val memories by AppDb.get(ctx).memories().observeAll().collectAsState(initial = emptyList())
     var watches by remember { mutableStateOf(Watches.all(ctx)) }
     var hasKey by remember { mutableStateOf(Secrets.apiKey(ctx).isNotBlank()) }
+    var aiTest by remember { mutableStateOf("") }
     var provider by remember { mutableStateOf(appPrefs(ctx).getString("ai_provider", "auto") ?: "auto") }
     var googleOk by remember { mutableStateOf(GoogleAuth.connected(ctx)) }
     var googleErr by remember { mutableStateOf("") }
@@ -318,6 +319,12 @@ fun SettingsScreen(resumeTick: Int = 0) {
         }
         item { SecretBlock("Groq-Schlüssel", "groq_key", "https://console.groq.com/keys", "Kostenlosen Groq-Schlüssel holen") }
         item { SecretBlock("Gemini-Schlüssel", "gemini_key", "https://aistudio.google.com/apikey", "Kostenlosen Gemini-Schlüssel holen") }
+        item {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                OutlinedButton(onClick = { scope.launch { aiTest = "Teste …"; aiTest = Ai.diagnose(ctx.applicationContext) } }) { Text("KI testen") }
+                if (aiTest.isNotBlank()) SelectionContainer { Text(aiTest, fontSize = 11.sp, color = Color.Gray) }
+            }
+        }
 
         item { Text("Google & Gmail", style = MaterialTheme.typography.titleMedium, color = Cyan) }
         item {
@@ -365,6 +372,8 @@ fun SettingsScreen(resumeTick: Int = 0) {
         }
         item { SecretRow("Google-Cloud-TTS-Schlüssel", "gtts_key", "Optional: Chirp-3-HD-Stimme, 1 Mio. Zeichen/Monat gratis (Google-Cloud-Konto mit Rechnungskonto nötig).") }
         item { SecretRow("ElevenLabs-Schlüssel", "eleven_key", "Optional: elevenlabs.io, kostenloser Plan ohne Karte (ca. 10.000 Zeichen/Monat).") }
+        item { VoiceIdField("ElevenLabs Voice-ID (eigene, selbst gestaltete Stimme)", "voice_eleven") }
+        item { VoiceIdField("Google-Stimme (z. B. de-DE-Chirp3-HD-Charon)", "voice_google") }
 
         item { Text("Handy-Steuerung & Assistent", style = MaterialTheme.typography.titleMedium, color = Cyan) }
         item { PermRow(Step.ACCESSIBILITY, "Apps bedienen (Bedienungshilfe)", resumeTick) }

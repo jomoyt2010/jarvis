@@ -92,11 +92,14 @@ object Voice {
     }
 
     private suspend fun render(ctx: Context, text: String): Pair<ShortArray, Int>? {
-        synchronized(cache) { cache[text] }?.let { return it }
+        val sp0 = appPrefs(ctx)
+        val ck = text + "\u0000" + listOf("voice_engine", "voice_edge", "voice_edge_en", "lang", "voice_google", "voice_eleven")
+            .joinToString("|") { sp0.getString(it, "") ?: "" } + sp0.getFloat("robot", 0.5f)
+        synchronized(cache) { cache[ck] }?.let { return it }
         val s = synth(ctx, text) ?: return null
         val out = robotize(s.pcm, s.rate, appPrefs(ctx).getFloat("robot", 0.5f))
         val res = out to (if (s.engine == "phone") s.rate else (s.rate * 0.97).roundToInt())
-        synchronized(cache) { cache[text] = res; while (cache.size > 4) cache.remove(cache.keys.first()) }
+        synchronized(cache) { cache[ck] = res; while (cache.size > 4) cache.remove(cache.keys.first()) }
         return res
     }
 
@@ -206,7 +209,7 @@ object Voice {
 
     private fun googleTts(ctx: Context, text: String): Pair<ShortArray, Int> {
         val key = Secrets.get(ctx, "gtts_key")
-        val voice = appPrefs(ctx).getString("voice_google", "de-DE-Chirp3-HD-Orus") ?: "de-DE-Chirp3-HD-Orus"
+        val voice = appPrefs(ctx).getString("voice_google", "")?.takeIf { it.isNotBlank() } ?: "de-DE-Chirp3-HD-Orus"
         val body = JSONObject().put("input", JSONObject().put("text", text))
             .put("voice", JSONObject().put("languageCode", "de-DE").put("name", voice))
             .put("audioConfig", JSONObject().put("audioEncoding", "LINEAR16").put("sampleRateHertz", 24000))
@@ -219,7 +222,7 @@ object Voice {
     // ---------- ElevenLabs (Free-Tier) ----------
     private fun elevenTts(ctx: Context, text: String): Pair<ShortArray, Int> {
         val key = Secrets.get(ctx, "eleven_key")
-        val voice = appPrefs(ctx).getString("voice_eleven", "onwK4e9ZLuTAKqWW03F9") ?: "onwK4e9ZLuTAKqWW03F9"
+        val voice = appPrefs(ctx).getString("voice_eleven", "")?.takeIf { it.isNotBlank() } ?: "onwK4e9ZLuTAKqWW03F9"
         val body = JSONObject().put("text", text).put("model_id", "eleven_multilingual_v2")
             .put("voice_settings", JSONObject().put("stability", 0.55).put("similarity_boost", 0.75))
         val (code, bytes) = http("https://api.elevenlabs.io/v1/text-to-speech/$voice",

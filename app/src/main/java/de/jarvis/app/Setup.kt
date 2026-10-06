@@ -67,7 +67,7 @@ object Perms {
             Step.BATTERY -> open(ctx, Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, uri))
             Step.ACCESSIBILITY -> open(ctx, Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
             Step.OVERLAY -> open(ctx, Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, uri))
-            Step.ASSISTANT -> open(ctx, Intent(Settings.ACTION_VOICE_INPUT_SETTINGS))
+            Step.ASSISTANT -> try { ctx.startActivity(Intent(Settings.ACTION_VOICE_INPUT_SETTINGS)) } catch (e: Exception) { open(ctx, Intent(Settings.ACTION_MANAGE_DEFAULT_APPS_SETTINGS)) }
         }
     }
 

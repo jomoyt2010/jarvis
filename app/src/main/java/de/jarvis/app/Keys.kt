@@ -13,6 +13,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.launch
 
 @Composable
 fun GetUrlButton(url: String, label: String) {
@@ -59,6 +60,7 @@ fun AiKeyScreen(onSaved: () -> Unit, onSkip: () -> Unit) = Centered {
 @Composable
 fun VoiceLangAndEdge() {
     val ctx = LocalContext.current
+    val scope = rememberCoroutineScope()
     var lang by remember { mutableStateOf(appPrefs(ctx).getString("lang", "de") ?: "de") }
     val en = lang == "en"
     val key = if (en) "voice_edge_en" else "voice_edge"
@@ -77,7 +79,7 @@ fun VoiceLangAndEdge() {
         list.chunked(3).forEach { row ->
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 row.forEach { (k, l) ->
-                    FilterChip(selected = sel == k, onClick = { sel = k; appPrefs(ctx).edit().putString(key, k).apply() }, label = { Text(l, fontSize = 12.sp) })
+                    FilterChip(selected = sel == k, onClick = { sel = k; appPrefs(ctx).edit().putString(key, k).apply(); scope.launch { Voice.speak(ctx.applicationContext, if (en) "Good day. I am JARVIS, at your service." else "Guten Tag. Ich bin JARVIS, zu Ihren Diensten.") } }, label = { Text(l, fontSize = 12.sp) })
                 }
             }
         }
@@ -96,4 +98,12 @@ fun PermRow(step: Step, label: String, resumeTick: Int) {
         }
         if (!ok) OutlinedButton(onClick = { Perms.request(ctx, step, false) {} }) { Text("Einrichten") }
     }
+}
+
+@Composable
+fun VoiceIdField(label: String, key: String) {
+    val ctx = LocalContext.current
+    var v by remember { mutableStateOf(appPrefs(ctx).getString(key, "") ?: "") }
+    OutlinedTextField(value = v, onValueChange = { v = it; appPrefs(ctx).edit().putString(key, it.trim()).apply() },
+        singleLine = true, label = { Text(label, fontSize = 12.sp) }, modifier = Modifier.fillMaxWidth())
 }

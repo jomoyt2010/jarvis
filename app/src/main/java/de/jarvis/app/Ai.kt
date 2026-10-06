@@ -8,6 +8,8 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 import java.net.HttpURLConnection
@@ -97,18 +99,51 @@ object Gemini {
 object Groq {
     @Volatile var lastModel = ""
     private val dead = HashSet<String>()
+    @Volatile private var available: List<String> = emptyList()
+    @Volatile private var fetchedAt = 0L
+    private val deny = listOf("whisper", "tts", "guard", "orpheus", "embed", "safeguard")
 
-    fun chain(tier: Gemini.Tier, vision: Boolean): List<String> {
-        val scout = "meta-llama/llama-4-scout-17b-16e-instruct"
-        val l70 = "llama-3.3-70b-versatile"
-        val gpt = "openai/gpt-oss-120b"
-        val c = when {
-            vision -> listOf(scout)
-            tier == Gemini.Tier.SMART -> listOf(gpt, l70, scout)
-            tier == Gemini.Tier.MID -> listOf(l70, scout)
-            else -> listOf(scout, l70)
+    /** Holt die aktuell verfuegbaren Chat-Modelle von Groq. */
+    fun refresh(key: String): List<String> {
+        val c = URL("https://api.groq.com/openai/v1/models").openConnection() as HttpURLConnection
+        c.connectTimeout = 10000; c.readTimeout = 15000
+        c.setRequestProperty("Authorization", "Bearer $key")
+        val code = c.responseCode
+        val raw = (if (code < 400) c.inputStream else c.errorStream)?.bufferedReader()?.use { it.readText() } ?: ""
+        c.disconnect()
+        if (code != 200) throw ApiError(code, raw)
+        val arr = JSONObject(raw).optJSONArray("data") ?: JSONArray()
+        val out = ArrayList<String>()
+        for (i in 0 until arr.length()) {
+            val o = arr.getJSONObject(i)
+            val id = o.optString("id")
+            if (id.isBlank() || !o.optBoolean("active", true)) continue
+            if (deny.any { id.contains(it, true) }) continue
+            out.add(id)
         }
-        return c.filter { it !in dead }.ifEmpty { c }
+        available = out; fetchedAt = System.currentTimeMillis()
+        return out
+    }
+
+    fun chain(key: String, tier: Gemini.Tier, vision: Boolean): List<String> {
+        var all = available
+        if (all.isEmpty() || System.currentTimeMillis() - fetchedAt > 3_600_000) {
+            all = try { refresh(key) } catch (e: Exception) { available }
+        }
+        val list = all.filter { it !in dead }
+        if (list.isEmpty()) return listOf("llama-3.3-70b-versatile", "meta-llama/llama-4-scout-17b-16e-instruct")
+        fun pick(vararg p: String): List<String> = p.flatMap { s -> list.filter { it.contains(s, true) } }.distinct()
+        val scout = pick("llama-4-scout", "llama-4-maverick")
+        val big = pick("gpt-oss-120b", "llama-3.3-70b", "qwen3-32b", "kimi")
+        val mid = pick("llama-3.3-70b", "gpt-oss-120b", "qwen3-32b")
+        val small = pick("llama-3.1-8b", "gpt-oss-20b")
+        val c = when {
+            vision -> scout
+            tier == Gemini.Tier.SMART -> big + scout + small
+            tier == Gemini.Tier.MID -> mid + scout + small
+            else -> scout + mid + small
+        }.distinct()
+        return if (c.isEmpty() && !vision) list else c
     }
 
     private fun post(key: String, body: JSONObject): Pair<Int, String> {
@@ -124,10 +159,13 @@ object Groq {
     }
 
     fun chat(key: String, models: List<String>, body: JSONObject): JSONObject {
+        var lastCode = 404
+        var lastRaw = "{\"error\":{\"message\":\"Kein passendes Groq-Modell gefunden.\"}}"
         var i = 0
         while (i < models.size) {
             body.put("model", models[i])
             val (code, raw) = post(key, body)
+            lastCode = code; lastRaw = raw
             when {
                 code == 200 -> { lastModel = models[i]; return JSONObject(raw) }
                 code == 404 || (code == 400 && raw.contains("decommissioned", true)) -> { dead.add(models[i]); i++ }
@@ -135,7 +173,7 @@ object Groq {
                 else -> throw ApiError(code, raw)
             }
         }
-        throw ApiError(404, "kein Groq-Modell verfuegbar")
+        throw ApiError(lastCode, lastRaw)
     }
 }
 
@@ -280,7 +318,7 @@ $memText"""
             try {
                 val body = JSONObject().put("max_tokens", 400)
                     .put("messages", JSONArray().put(JSONObject().put("role", "user").put("content", user)))
-                return Groq.chat(q, Groq.chain(Gemini.Tier.MID, false), body).getJSONArray("choices")
+                return Groq.chat(q, Groq.chain(q, Gemini.Tier.MID, false), body).getJSONArray("choices")
                     .getJSONObject(0).getJSONObject("message").optString("content").trim()
             } catch (_: Exception) {}
         }
@@ -392,7 +430,7 @@ $memText"""
         }
         msgs.put(JSONObject().put("role", "user").put("content", groqContent(text, files)))
         val tools = openAiTools()
-        val models = Groq.chain(tier, vision)
+        val models = Groq.chain(key, tier, vision)
         for (turn in 0 until 12) {
             val body = JSONObject().put("messages", msgs).put("tools", tools).put("tool_choice", "auto")
                 .put("max_tokens", if (voice) 400 else 3000)
@@ -410,6 +448,32 @@ $memText"""
             }
         }
         return "Das waren mir zu viele Schritte. Sag mir bitte genauer, was ich tun soll."
+    }
+
+    /** Verbindungstest fuer die Einstellungen. */
+    suspend fun diagnose(ctx: Context): String = withContext(Dispatchers.IO) {
+        val sb = StringBuilder()
+        val q = Secrets.get(ctx, "groq_key"); val g = Secrets.apiKey(ctx)
+        if (q.isNotBlank()) {
+            try {
+                val models = Groq.refresh(q)
+                sb.append("Groq: ${models.size} Modelle (${models.take(4).joinToString()})\n")
+                val body = JSONObject().put("max_tokens", 20)
+                    .put("messages", JSONArray().put(JSONObject().put("role", "user").put("content", "Sag OK")))
+                Groq.chat(q, Groq.chain(q, Gemini.Tier.FAST, false), body)
+                sb.append("Groq-Antwort: ✓ ${Groq.lastModel}\n")
+            } catch (e: ApiError) { sb.append("Groq-Fehler ${e.code}: ${e.raw.take(200)}\n")
+            } catch (e: Exception) { sb.append("Groq: ${e.message}\n") }
+        }
+        if (g.isNotBlank()) {
+            try {
+                val body = JSONObject().put("contents", JSONArray().put(JSONObject().put("role", "user").put("parts", JSONArray().put(JSONObject().put("text", "Sag OK")))))
+                Gemini.generate(g, body, Gemini.Tier.FAST)
+                sb.append("Gemini-Antwort: ✓ ${Gemini.lastModel}\n")
+            } catch (e: ApiError) { sb.append("Gemini-Fehler ${e.code}: ${e.raw.take(200)}\n")
+            } catch (e: Exception) { sb.append("Gemini: ${e.message}\n") }
+        }
+        if (sb.isEmpty()) "Kein Schlüssel gespeichert." else sb.toString()
     }
 
     suspend fun ask(ctx: Context, text: String, files: List<Attachment> = emptyList(), voiceMode: Boolean = false): Reply {

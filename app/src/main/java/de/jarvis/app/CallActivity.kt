@@ -157,7 +157,7 @@ class CallActivity : ComponentActivity() {
 
     private suspend fun listenOnce(): String? {
         val result = suspendCancellableCoroutine<String?> { cont ->
-            val r = SpeechRecognizer.createSpeechRecognizer(this)
+            val r = Recog.create(this)
             rec = r
             r.setRecognitionListener(object : RecognitionListener {
                 override fun onReadyForSpeech(params: Bundle?) {}

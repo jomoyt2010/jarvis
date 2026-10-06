@@ -48,7 +48,7 @@ class ListenService : Service() {
     private fun listen(cmdMode: Boolean) {
         if (!running) return
         rec?.destroy()
-        val r = SpeechRecognizer.createSpeechRecognizer(this)
+        val r = Recog.create(this)
         rec = r
         r.setRecognitionListener(object : RecognitionListener {
             override fun onReadyForSpeech(params: Bundle?) {}

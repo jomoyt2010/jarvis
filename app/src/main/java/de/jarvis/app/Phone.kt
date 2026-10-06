@@ -7,7 +7,10 @@ import android.media.AudioManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.content.ComponentName
 import android.provider.Settings
+import android.speech.RecognitionService
+import android.speech.SpeechRecognizer
 import android.service.voice.VoiceInteractionService
 import android.service.voice.VoiceInteractionSession
 import android.service.voice.VoiceInteractionSessionService
@@ -312,5 +315,34 @@ object UiPressTool : JarvisTool {
         val ok = s.press(args.getString("button"))
         delay(700)
         return (if (ok) "Erledigt.\n" else "Fehlgeschlagen.\n") + s.readScreen(25)
+    }
+}
+
+// ======================= Spracherkennung & Assistent-Einstieg =======================
+/** Eigene Spracherkennung immer ueber Google, auch wenn JARVIS Standard-Assistent ist. */
+object Recog {
+    private val google = ComponentName("com.google.android.googlequicksearchbox", "com.google.android.voicesearch.serviceapi.GoogleRecognitionService")
+    private fun hasGoogle(ctx: Context) = try { ctx.packageManager.getServiceInfo(google, 0); true } catch (e: Exception) { false }
+    fun available(ctx: Context) = hasGoogle(ctx) || SpeechRecognizer.isRecognitionAvailable(ctx)
+    fun create(ctx: Context): SpeechRecognizer =
+        if (hasGoogle(ctx)) SpeechRecognizer.createSpeechRecognizer(ctx, google) else SpeechRecognizer.createSpeechRecognizer(ctx)
+}
+
+/** Platzhalter, damit Android JARVIS als Assistent akzeptiert. */
+class JarvisRecognitionService : RecognitionService() {
+    override fun onStartListening(recognizerIntent: Intent?, listener: Callback?) { try { listener?.error(SpeechRecognizer.ERROR_CLIENT) } catch (_: Exception) {} }
+    override fun onCancel(listener: Callback?) {}
+    override fun onStopListening(listener: Callback?) {}
+}
+
+/** Wird von Home-Taste halten / Wischgeste / Seitentaste (ACTION_ASSIST) gestartet. */
+class AssistActivity : android.app.Activity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        try {
+            startActivity(Intent(this, CallActivity::class.java).putExtra("outgoing", true).putExtra("assist", true)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP))
+        } catch (_: Exception) {}
+        finish()
     }
 }
