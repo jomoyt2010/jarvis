@@ -89,17 +89,6 @@ fun GetKeyButton() {
     }
 }
 
-@Composable
-fun AiKeyScreen(onSaved: () -> Unit, onSkip: () -> Unit) = Centered {
-    Text("KI verbinden", style = MaterialTheme.typography.headlineMedium, color = Cyan)
-    Spacer(Modifier.height(12.dp))
-    Text("Meine KI läuft über Google Gemini. Den Schlüssel dafür gibt es kostenlos: Tippe auf den Button, melde dich an, tippe auf „Create API key“ und kopiere ihn. Dann hier einfügen.", textAlign = TextAlign.Center)
-    Spacer(Modifier.height(16.dp))
-    GetKeyButton()
-    Spacer(Modifier.height(8.dp))
-    KeyField(onSaved)
-    TextButton(onClick = onSkip) { Text("Später") }
-}
 
 @Composable
 fun GoogleScreen(error: String, onConnect: () -> Unit, onSkip: () -> Unit) = Centered {
@@ -122,7 +111,7 @@ fun ChatScreen(listenTick: Int) {
     val scope = rememberCoroutineScope()
     var input by remember { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
-    var hasKey by remember { mutableStateOf(Secrets.apiKey(ctx).isNotBlank()) }
+    var hasKey by remember { mutableStateOf(Secrets.hasAi(ctx)) }
     var listening by remember { mutableStateOf(false) }
     var menu by remember { mutableStateOf(false) }
     var cameraUri by remember { mutableStateOf<Uri?>(null) }
@@ -187,7 +176,7 @@ fun ChatScreen(listenTick: Int) {
         })
         recognizer.startListening(Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
             .putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-            .putExtra(RecognizerIntent.EXTRA_LANGUAGE, "de-DE"))
+            .putExtra(RecognizerIntent.EXTRA_LANGUAGE, Lang.stt(ctx)))
         listening = true
     }
 
@@ -204,9 +193,7 @@ fun ChatScreen(listenTick: Int) {
             Card(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("KI einrichten", color = Cyan)
-                    Text("Einmalig brauche ich einen kostenlosen Google-Gemini-Schlüssel.", fontSize = 13.sp)
-                    GetKeyButton()
-                    KeyField { hasKey = true }
+                    GroqKeyBlock { hasKey = true }
                 }
             }
             Spacer(Modifier.height(6.dp))
@@ -297,12 +284,13 @@ private fun SecretRow(label: String, name: String, hint: String) {
 }
 
 @Composable
-fun SettingsScreen() {
+fun SettingsScreen(resumeTick: Int = 0) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     val memories by AppDb.get(ctx).memories().observeAll().collectAsState(initial = emptyList())
     var watches by remember { mutableStateOf(Watches.all(ctx)) }
     var hasKey by remember { mutableStateOf(Secrets.apiKey(ctx).isNotBlank()) }
+    var provider by remember { mutableStateOf(appPrefs(ctx).getString("ai_provider", "auto") ?: "auto") }
     var googleOk by remember { mutableStateOf(GoogleAuth.connected(ctx)) }
     var googleErr by remember { mutableStateOf("") }
     val connect = rememberGoogleConnect { ok, msg -> googleOk = ok; googleErr = if (ok) "" else msg }
@@ -318,13 +306,18 @@ fun SettingsScreen() {
         item { Text("KI", style = MaterialTheme.typography.titleMedium, color = Cyan) }
         item {
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text("Gemini-Schlüssel: " + if (hasKey) "gespeichert ✓" else "fehlt")
-                Text("Einfache Fragen laufen über ein schnelles Modell, schwere Aufgaben und Anhänge über ein stärkeres.", fontSize = 11.sp, color = Color.Gray)
-                GetKeyButton()
-                KeyField { hasKey = true }
-                if (hasKey) TextButton(onClick = { Secrets.setApiKey(ctx, ""); hasKey = false }) { Text("Schlüssel entfernen") }
+                Text("Anbieter", fontSize = 13.sp)
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    listOf("auto" to "Automatisch", "groq" to "Groq", "gemini" to "Gemini").forEach { (k, label) ->
+                        FilterChip(selected = provider == k, onClick = { provider = k; appPrefs(ctx).edit().putString("ai_provider", k).apply() },
+                            label = { Text(label, fontSize = 12.sp) })
+                    }
+                }
+                Text("Groq: schnell, kostenlos, ohne Karte, überall verfügbar. Gemini: stärker bei Bildern und PDFs, in manchen Ländern nur mit Abrechnung.", fontSize = 11.sp, color = Color.Gray)
             }
         }
+        item { SecretBlock("Groq-Schlüssel", "groq_key", "https://console.groq.com/keys", "Kostenlosen Groq-Schlüssel holen") }
+        item { SecretBlock("Gemini-Schlüssel", "gemini_key", "https://aistudio.google.com/apikey", "Kostenlosen Gemini-Schlüssel holen") }
 
         item { Text("Google & Gmail", style = MaterialTheme.typography.titleMedium, color = Cyan) }
         item {
@@ -355,13 +348,7 @@ fun SettingsScreen() {
                         }
                     }
                 }
-                Text("Edge-Stimme", fontSize = 13.sp, modifier = Modifier.padding(top = 4.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    listOf("de-DE-ConradNeural" to "Conrad", "de-DE-KillianNeural" to "Killian", "de-DE-FlorianMultilingualNeural" to "Florian").forEach { (k, label) ->
-                        FilterChip(selected = edgeVoice == k, onClick = { edgeVoice = k; appPrefs(ctx).edit().putString("voice_edge", k).apply() },
-                            label = { Text(label, fontSize = 12.sp) })
-                    }
-                }
+                VoiceLangAndEdge()
             }
         }
         item {
@@ -378,6 +365,12 @@ fun SettingsScreen() {
         }
         item { SecretRow("Google-Cloud-TTS-Schlüssel", "gtts_key", "Optional: Chirp-3-HD-Stimme, 1 Mio. Zeichen/Monat gratis (Google-Cloud-Konto mit Rechnungskonto nötig).") }
         item { SecretRow("ElevenLabs-Schlüssel", "eleven_key", "Optional: elevenlabs.io, kostenloser Plan ohne Karte (ca. 10.000 Zeichen/Monat).") }
+
+        item { Text("Handy-Steuerung & Assistent", style = MaterialTheme.typography.titleMedium, color = Cyan) }
+        item { PermRow(Step.ACCESSIBILITY, "Apps bedienen (Bedienungshilfe)", resumeTick) }
+        item { PermRow(Step.OVERLAY, "Apps im Hintergrund öffnen", resumeTick) }
+        item { PermRow(Step.ASSISTANT, "Standard-Assistent (wie Google Assistant)", resumeTick) }
+        item { Text("Beispiel: „Öffne YouTube und suche nach Lo-Fi Beats.“", fontSize = 11.sp, color = Color.Gray) }
 
         item { Text("Hey JARVIS & Proaktiv", style = MaterialTheme.typography.titleMedium, color = Cyan) }
         item {
@@ -438,7 +431,7 @@ fun MainShell(resumeTick: Int, listenTick: Int, onRecheck: () -> Unit) {
             when (tab) {
                 0 -> ChatScreen(listenTick)
                 1 -> HomeScreen(resumeTick, onRecheck)
-                else -> SettingsScreen()
+                else -> SettingsScreen(resumeTick)
             }
         }
         if (!imeUp) NavigationBar {

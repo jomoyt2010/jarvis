@@ -61,7 +61,7 @@ fun SetupFlow(resumeTick: Int, prefs: Prefs, onFinished: () -> Unit) {
     var tick by remember { mutableIntStateOf(0) }
     var skipped by remember { mutableStateOf(prefs.skipped) }
     var attempted by remember { mutableStateOf(setOf<Step>()) }
-    var hasKey by remember { mutableStateOf(Secrets.apiKey(ctx).isNotBlank()) }
+    var hasKey by remember { mutableStateOf(Secrets.hasAi(ctx)) }
     var googleOk by remember { mutableStateOf(GoogleAuth.connected(ctx)) }
     var googleErr by remember { mutableStateOf("") }
     val connect = rememberGoogleConnect { ok, msg -> googleOk = ok; googleErr = if (ok) "" else msg }

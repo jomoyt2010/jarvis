@@ -25,7 +25,10 @@ enum class Step(val title: String, val text: String) {
     CALENDAR("Kalender", "Damit ich deine Termine kenne und eintragen kann, brauche ich Zugriff auf deinen Kalender."),
     EXACT_ALARM("Pünktliche Erinnerungen", "Schalte auf der nächsten Seite „Alarme & Erinnerungen“ für JARVIS ein."),
     FULL_SCREEN("JARVIS-Anruf", "Erlaube auf der nächsten Seite Vollbild-Hinweise, damit ich wichtige Dinge als Anruf auf dem Sperrbildschirm zeigen kann."),
-    BATTERY("Hintergrundbetrieb", "Damit ich dich auch informieren kann, wenn die App geschlossen ist, benötige ich Hintergrundbetrieb. Tippe auf der nächsten Seite auf „Zulassen“.")
+    BATTERY("Hintergrundbetrieb", "Damit ich dich auch informieren kann, wenn die App geschlossen ist, benötige ich Hintergrundbetrieb. Tippe auf der nächsten Seite auf „Zulassen“."),
+    ACCESSIBILITY("Handy-Steuerung (optional)", "Damit ich Apps bedienen kann (z. B. in YouTube etwas suchen), aktiviere JARVIS unter „Bedienungshilfen“. Ist der Schalter grau: App-Info öffnen, oben rechts ⋮ tippen und „Eingeschränkte Einstellungen zulassen“ wählen."),
+    OVERLAY("Apps im Hintergrund öffnen (optional)", "Erlaube „Über anderen Apps einblenden“, damit ich Apps auch öffnen kann, wenn JARVIS im Hintergrund läuft."),
+    ASSISTANT("Standard-Assistent (optional)", "Wähle JARVIS als „Digitaler Assistent“. Dann startest du mich wie den Google Assistant, z. B. mit Home-Taste halten oder Wischgeste von der Ecke.")
 }
 
 object Perms {
@@ -39,13 +42,20 @@ object Perms {
         Step.EXACT_ALARM -> Build.VERSION.SDK_INT < 31 || ctx.getSystemService(AlarmManager::class.java).canScheduleExactAlarms()
         Step.FULL_SCREEN -> Build.VERSION.SDK_INT < 34 || ctx.getSystemService(NotificationManager::class.java).canUseFullScreenIntent()
         Step.BATTERY -> ctx.getSystemService(PowerManager::class.java).isIgnoringBatteryOptimizations(ctx.packageName)
+        Step.ACCESSIBILITY -> JarvisAccessibilityService.instance != null ||
+            (Settings.Secure.getString(ctx.contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES) ?: "").contains(ctx.packageName)
+        Step.OVERLAY -> Settings.canDrawOverlays(ctx)
+        Step.ASSISTANT -> try {
+            if (Build.VERSION.SDK_INT >= 29) ctx.getSystemService(android.app.role.RoleManager::class.java).isRoleHeld(android.app.role.RoleManager.ROLE_ASSISTANT)
+            else (Settings.Secure.getString(ctx.contentResolver, "assistant") ?: "").contains(ctx.packageName)
+        } catch (e: Exception) { false }
     }
 
     private fun isRuntime(s: Step) = s == Step.NOTIFICATIONS || s == Step.MIC || s == Step.CALENDAR
 
     fun request(ctx: Context, step: Step, retry: Boolean, launch: (Array<String>) -> Unit) {
         val uri = Uri.parse("package:${ctx.packageName}")
-        if (retry && isRuntime(step)) { open(ctx, Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, uri)); return }
+        if (retry && (isRuntime(step) || step == Step.ACCESSIBILITY)) { open(ctx, Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, uri)); return }
         when (step) {
             Step.NOTIFICATIONS ->
                 if (Build.VERSION.SDK_INT >= 33) launch(arrayOf(Manifest.permission.POST_NOTIFICATIONS))
@@ -55,6 +65,9 @@ object Perms {
             Step.EXACT_ALARM -> open(ctx, Intent("android.settings.REQUEST_SCHEDULE_EXACT_ALARM", uri))
             Step.FULL_SCREEN -> open(ctx, Intent("android.settings.MANAGE_APP_USE_FULL_SCREEN_INTENT", uri))
             Step.BATTERY -> open(ctx, Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, uri))
+            Step.ACCESSIBILITY -> open(ctx, Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+            Step.OVERLAY -> open(ctx, Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, uri))
+            Step.ASSISTANT -> open(ctx, Intent(Settings.ACTION_VOICE_INPUT_SETTINGS))
         }
     }
 
@@ -100,7 +113,7 @@ object Provisioner {
             if (web) Check("Web", Status.OK, "verfügbar") else Check("Web", Status.WARN, "keine Verbindung"),
             if (exact) Check("Erinnerungen", Status.OK, "verfügbar") else Check("Erinnerungen", Status.WARN, "nur ungefähre Zeiten"),
             if (JarvisService.running) Check("Hintergrund", Status.OK, "aktiv") else Check("Hintergrund", Status.WARN, "nicht aktiv"),
-            if (Secrets.apiKey(ctx).isNotBlank()) Check("KI", Status.OK, "Schlüssel gespeichert") else Check("KI", Status.PENDING, "Schlüssel im Chat einfügen")
+            if (Secrets.hasAi(ctx)) Check("KI", Status.OK, "Schlüssel gespeichert") else Check("KI", Status.PENDING, "Schlüssel in den Einstellungen")
         )
     }
 }

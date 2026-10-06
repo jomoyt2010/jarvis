@@ -30,3 +30,8 @@ Stimme: Edge-Neural (gratis, ohne Schlüssel) + optional Google Chirp / ElevenLa
 KI-Routing: schnell (Flash-Lite) für einfache Fragen, Flash/Pro für schwere Aufgaben und Anhänge.
 Anrufe über Android-Telecom (selbstverwaltet) mit Anrufstil-Benachrichtigung; Auflegen immer sichtbar.
 Chat: lange Texte, Markdown, Foto/PDF/Text/Audio-Anhänge, Tastatur-sicheres Layout.
+
+## Version 0.4
+KI: Groq (kostenlos, überall) + Gemini, Websuche ohne Schlüssel, echte Fehlermeldungen.
+Handy-Steuerung: Apps öffnen, YouTube-Suche, Navigation, Bedienungshilfe (lesen/tippen/scrollen).
+Standard-Assistent (Voice Interaction Service), Sprache Deutsch/Englisch, weitere Edge-Stimmen.

@@ -121,7 +121,9 @@ class CallActivity : ComponentActivity() {
         tone(ToneGenerator.TONE_PROP_ACK, 200)
         scope.launch { while (isActive) { delay(1000); seconds++ } }
         callJob = scope.launch {
-            say(if (outgoing) "Hier ist JARVIS. Was kann ich für dich tun?" else text.ifBlank { "Hier ist JARVIS." })
+            val en = Lang.en(this@CallActivity)
+            say(if (outgoing) (if (intent.getBooleanExtra("assist", false)) (if (en) "Yes?" else "Ja?") else if (en) "JARVIS here. How may I help?" else "Hier ist JARVIS. Was kann ich für dich tun?")
+                else text.ifBlank { "Hier ist JARVIS." })
             if (!Perms.isGranted(this@CallActivity, Step.MIC)) { say("Mir fehlt die Mikrofon-Erlaubnis. Ich lege auf."); endCall(); return@launch }
             var context = if (outgoing) "" else "[Kontext: Du hast den Nutzer gerade angerufen und gesagt: \"$text\"] "
             var silent = 0
@@ -173,7 +175,7 @@ class CallActivity : ComponentActivity() {
             cont.invokeOnCancellation { try { r.destroy() } catch (_: Exception) {} }
             r.startListening(Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
                 .putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-                .putExtra(RecognizerIntent.EXTRA_LANGUAGE, "de-DE"))
+                .putExtra(RecognizerIntent.EXTRA_LANGUAGE, Lang.stt(this)))
         }
         try { rec?.destroy() } catch (_: Exception) {}
         rec = null

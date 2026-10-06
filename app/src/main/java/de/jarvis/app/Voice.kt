@@ -134,7 +134,8 @@ object Voice {
     }
 
     private fun edgeTts(ctx: Context, text: String): Pair<ShortArray, Int> {
-        val voice = appPrefs(ctx).getString("voice_edge", "de-DE-ConradNeural") ?: "de-DE-ConradNeural"
+        val voice = if (Lang.en(ctx)) appPrefs(ctx).getString("voice_edge_en", "en-GB-ThomasNeural") ?: "en-GB-ThomasNeural"
+        else appPrefs(ctx).getString("voice_edge", "de-DE-ConradNeural") ?: "de-DE-ConradNeural"
         var lastFail = "unbekannt"
         for (attempt in 0 until 2) {
             val mp3 = ByteArrayOutputStream()
@@ -156,7 +157,7 @@ object Voice {
             val parts = voice.split("-")
             val longName = "Microsoft Server Speech Text to Speech Voice (${parts[0]}-${parts[1]}, ${parts.drop(2).joinToString("-")})"
             val esc = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-            val ssml = "<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='de-DE'><voice name='$longName'>" +
+            val ssml = "<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='${parts[0]}-${parts[1]}'><voice name='$longName'>" +
                 "<prosody pitch='-10Hz' rate='-3%' volume='+0%'>$esc</prosody></voice></speak>"
             val ws = client.newWebSocket(req, object : WebSocketListener() {
                 override fun onOpen(webSocket: WebSocket, response: Response) {
@@ -260,6 +261,7 @@ object Voice {
 
     private suspend fun androidTts(ctx: Context, text: String): Pair<ShortArray, Int>? {
         val t = ttsInstance(ctx) ?: return null
+        t.language = if (Lang.en(ctx)) Locale.UK else Locale.GERMAN
         val f = File(ctx.cacheDir, "tts_${System.nanoTime()}.wav")
         val done = CompletableDeferred<Boolean>()
         t.setOnUtteranceProgressListener(object : UtteranceProgressListener() {

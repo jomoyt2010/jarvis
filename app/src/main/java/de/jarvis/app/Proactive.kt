@@ -119,16 +119,15 @@ class ProactiveWorker(ctx: Context, p: WorkerParameters) : CoroutineWorker(ctx, 
         }
     }
 
-    private fun checkWatches(c: Context) {
-        val key = Secrets.apiKey(c)
-        if (key.isBlank()) return
+    private suspend fun checkWatches(c: Context) {
+        if (!Secrets.hasAi(c)) return
         val now = System.currentTimeMillis()
         for (w in Watches.all(c)) {
             if (now - w.lastRun < w.everyHours * 3_600_000L) continue
             try {
                 val prompt = if (w.last.isBlank()) "Fasse den aktuellen Stand zu folgendem Thema in höchstens 3 Sätzen zusammen: ${w.query}"
                 else "Thema: ${w.query}\nLetzter bekannter Stand: ${w.last}\nPrüfe per Websuche, ob es wesentlich Neues gibt. Antworte exakt mit KEINE_AENDERUNG, falls nicht. Sonst nenne die Neuigkeiten in höchstens 2 Sätzen."
-                val r = Ai.searchWeb(key, prompt)
+                val r = Reply(Ai.complete(c, prompt, w.query), emptyList())
                 when {
                     w.last.isBlank() -> Watches.update(c, w.copy(last = r.text, lastRun = now))
                     r.text.contains("KEINE_AENDERUNG") -> Watches.update(c, w.copy(lastRun = now))

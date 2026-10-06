@@ -34,7 +34,9 @@ object ToolRegistry {
         GetCalendarTool, CreateEventTool, DeleteEventTool,
         RememberTool, ForgetTool, DeviceStatusTool,
         SearchWebTool, ListMailTool, ReadMailTool, SendMailTool,
-        CreateWatchTool, ListWatchesTool, DeleteWatchTool)
+        CreateWatchTool, ListWatchesTool, DeleteWatchTool,
+        OpenAppTool, YouTubeSearchTool, OpenUrlTool, NavigateTool, DialTool, SmsDraftTool, MediaControlTool, VolumeTool,
+        UiReadTool, UiClickTool, UiTypeTool, UiScrollTool, UiPressTool)
     fun find(name: String) = all.firstOrNull { it.name == name }
 }
 

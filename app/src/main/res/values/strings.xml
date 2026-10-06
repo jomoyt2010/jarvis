@@ -1,0 +1,5 @@
+<resources>
+    <string name="a11y_label">JARVIS Handy-Steuerung</string>
+    <string name="a11y_desc">JARVIS darf auf deinen Wunsch den Bildschirm lesen sowie tippen, scrollen und Text eingeben, um Aufgaben auf deinem Handy zu erledigen. Passwortfelder und Zahlungen fasst JARVIS nicht ohne deine Bestätigung an.</string>
+    <string name="assistant_label">JARVIS</string>
+</resources>
