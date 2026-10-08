@@ -304,20 +304,9 @@ fun SettingsScreen(resumeTick: Int = 0) {
     LazyColumn(Modifier.fillMaxSize().padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         item { Spacer(Modifier.height(8.dp)); Text("Einstellungen", style = MaterialTheme.typography.titleLarge, color = Cyan) }
 
-        item { Text("KI", style = MaterialTheme.typography.titleMedium, color = Cyan) }
-        item {
-            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text("Anbieter", fontSize = 13.sp)
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    listOf("auto" to "Automatisch", "groq" to "Groq", "gemini" to "Gemini").forEach { (k, label) ->
-                        FilterChip(selected = provider == k, onClick = { provider = k; appPrefs(ctx).edit().putString("ai_provider", k).apply() },
-                            label = { Text(label, fontSize = 12.sp) })
-                    }
-                }
-                Text("Groq: schnell, kostenlos, ohne Karte, überall verfügbar. Gemini: stärker bei Bildern und PDFs, in manchen Ländern nur mit Abrechnung.", fontSize = 11.sp, color = Color.Gray)
-            }
-        }
-        item { SecretBlock("Groq-Schlüssel", "groq_key", "https://console.groq.com/keys", "Kostenlosen Groq-Schlüssel holen") }
+        item { Text("KI (Router + Experten, alles kostenlos)", style = MaterialTheme.typography.titleMedium, color = Cyan) }
+        item { Text("JARVIS fragt zuerst ein sehr schnelles Modell. Schwere Aufgaben gibt es automatisch an stärkere Modelle weiter. Mit mehreren Schlüsseln stößt du viel seltener an ein Gratis-Limit. Empfohlen: Groq und Mistral.", fontSize = 11.sp, color = Color.Gray) }
+        Oai.all.forEach { p -> item { SecretBlock(p.label + "-Schlüssel", p.keyName, p.keyUrl, p.getLabel) } }
         item { SecretBlock("Gemini-Schlüssel", "gemini_key", "https://aistudio.google.com/apikey", "Kostenlosen Gemini-Schlüssel holen") }
         item {
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -346,7 +335,7 @@ fun SettingsScreen(resumeTick: Int = 0) {
         item {
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text("Stimmen-Dienst (alle kostenlos)", fontSize = 13.sp)
-                val opts = listOf("auto" to "Automatisch", "edge" to "Edge-Neural", "google" to "Google Chirp", "eleven" to "ElevenLabs", "gemini" to "Gemini", "phone" to "Handy")
+                val opts = listOf("auto" to "Automatisch", "edge" to "Edge-KI", "groqtts" to "Groq-KI (EN)", "gemini" to "Gemini", "google" to "Google Chirp", "polly" to "Polly Brian/Hans", "phone" to "Handy")
                 opts.chunked(3).forEach { row ->
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         row.forEach { (k, label) ->
@@ -369,10 +358,9 @@ fun SettingsScreen(resumeTick: Int = 0) {
                 }
             }) { Text("Stimme testen") }
             if (testInfo.isNotBlank()) Text(testInfo, fontSize = 11.sp, color = Color.Gray)
+            OutlinedButton(onClick = { scope.launch { testInfo = "Teste alle Stimmen …"; testInfo = Voice.diagnose(ctx.applicationContext) } }) { Text("Alle Stimmen testen") }
         }
         item { SecretRow("Google-Cloud-TTS-Schlüssel", "gtts_key", "Optional: Chirp-3-HD-Stimme, 1 Mio. Zeichen/Monat gratis (Google-Cloud-Konto mit Rechnungskonto nötig).") }
-        item { SecretRow("ElevenLabs-Schlüssel", "eleven_key", "Optional: elevenlabs.io, kostenloser Plan ohne Karte (ca. 10.000 Zeichen/Monat).") }
-        item { VoiceIdField("ElevenLabs Voice-ID (eigene, selbst gestaltete Stimme)", "voice_eleven") }
         item { VoiceIdField("Google-Stimme (z. B. de-DE-Chirp3-HD-Charon)", "voice_google") }
 
         item { Text("Handy-Steuerung & Assistent", style = MaterialTheme.typography.titleMedium, color = Cyan) }

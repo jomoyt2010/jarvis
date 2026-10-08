@@ -35,3 +35,7 @@ Chat: lange Texte, Markdown, Foto/PDF/Text/Audio-Anhänge, Tastatur-sicheres Lay
 KI: Groq (kostenlos, überall) + Gemini, Websuche ohne Schlüssel, echte Fehlermeldungen.
 Handy-Steuerung: Apps öffnen, YouTube-Suche, Navigation, Bedienungshilfe (lesen/tippen/scrollen).
 Standard-Assistent (Voice Interaction Service), Sprache Deutsch/Englisch, weitere Edge-Stimmen.
+
+## Version 0.5
+KI: Router (schnelles Modell) + Experten, Anbieter Groq/Mistral/OpenRouter/Cerebras/Gemini, nur passende Tools pro Anfrage.
+Stimmen: Edge-KI, Groq-KI (EN), Polly, Gemini, Google; JARVIS wird richtig ausgesprochen; "Alle Stimmen testen".

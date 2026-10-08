@@ -31,6 +31,7 @@ import java.io.ByteArrayOutputStream
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
+import java.net.URLEncoder
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.security.MessageDigest
@@ -74,18 +75,18 @@ object Voice {
         current = null
     }
 
-    private fun clean(raw: String) = raw
+    private fun clean(raw: String, en: Boolean) = raw
         .replace(Regex("https?://\\S+"), "").replace(Regex("(?m)^\\s*[-*•]\\s+"), "")
-        .replace(Regex("[*_#`]"), "").trim().take(600)
+        .replace(Regex("[*_#`]"), "").replace(Regex("(?i)\\bjarvis\\b"), if (en) "Jarvis" else "Dschaarwis").trim().take(600)
 
     /** Sprache schon vorab erzeugen (z. B. waehrend das Handy klingelt). */
     fun prefetch(ctx: Context, raw: String) {
         val app = ctx.applicationContext
-        bg.launch { try { render(app, clean(raw)) } catch (_: Exception) {} }
+        bg.launch { try { render(app, clean(raw, Lang.en(app))) } catch (_: Exception) {} }
     }
 
     suspend fun speak(ctx: Context, raw: String) = withContext(Dispatchers.IO) {
-        val text = clean(raw)
+        val text = clean(raw, Lang.en(ctx))
         if (text.isEmpty()) return@withContext
         val r = render(ctx, text) ?: return@withContext
         play(r.first, r.second)
@@ -105,20 +106,14 @@ object Voice {
 
     private suspend fun synth(ctx: Context, text: String): Synth? {
         val pref = appPrefs(ctx).getString("voice_engine", "auto") ?: "auto"
-        val auto = listOf("edge", "google", "eleven", "gemini", "phone")
+        val auto = listOf("edge", "groqtts", "gemini", "google", "polly", "phone")
         val order = (if (pref != "auto") listOf(pref) else emptyList()) + auto.filter { it != pref }
         val now = System.currentTimeMillis()
         lastError = ""
         for (e in order) {
             if ((blocked[e] ?: 0L) > now) continue
             try {
-                val r: Pair<ShortArray, Int>? = when (e) {
-                    "google" -> if (Secrets.get(ctx, "gtts_key").isBlank()) null else googleTts(ctx, text)
-                    "eleven" -> if (Secrets.get(ctx, "eleven_key").isBlank()) null else elevenTts(ctx, text)
-                    "edge" -> edgeTts(ctx, text)
-                    "gemini" -> if (Secrets.apiKey(ctx).isBlank()) null else geminiTts(ctx, text)
-                    else -> androidTts(ctx, text)
-                }
+                val r: Pair<ShortArray, Int>? = engine(ctx, e, text)
                 if (r != null) { lastEngine = e; return Synth(r.first, r.second, e) }
             } catch (ex: Exception) {
                 lastError += "$e: ${ex.message}; "
@@ -126,6 +121,56 @@ object Voice {
             }
         }
         return null
+    }
+
+    private suspend fun engine(ctx: Context, e: String, text: String): Pair<ShortArray, Int>? = when (e) {
+        "google" -> if (Secrets.get(ctx, "gtts_key").isBlank()) null else googleTts(ctx, text)
+        "eleven" -> if (Secrets.get(ctx, "eleven_key").isBlank()) null else elevenTts(ctx, text)
+        "edge" -> edgeTts(ctx, text)
+        "groqtts" -> if (Secrets.get(ctx, "groq_key").isBlank() || !Lang.en(ctx)) null else groqTts(ctx, text)
+        "polly" -> pollyTts(ctx, text)
+        "gemini" -> if (Secrets.apiKey(ctx).isBlank()) null else geminiTts(ctx, text)
+        else -> androidTts(ctx, text)
+    }
+
+    /** Test aller Stimmen-Dienste fuer die Einstellungen. */
+    suspend fun diagnose(ctx: Context): String = withContext(Dispatchers.IO) {
+        val sb = StringBuilder()
+        for (e in listOf("edge", "groqtts", "gemini", "google", "polly", "phone")) {
+            val t0 = System.currentTimeMillis()
+            try {
+                val r = engine(ctx, e, "Guten Tag. Ich bin Jarvis.")
+                sb.append("$e: ").append(if (r == null) "übersprungen (kein Schlüssel oder nur Englisch-Modus)" else "✓ ${System.currentTimeMillis() - t0} ms").append("\n")
+            } catch (ex: Exception) { sb.append("$e: ✗ ${ex.message?.take(140)}\n") }
+        }
+        sb.toString()
+    }
+
+    // ---------- Groq-KI-Stimme (Orpheus/PlayAI, nur Englisch) ----------
+    private fun groqTts(ctx: Context, text: String): Pair<ShortArray, Int> {
+        val key = Secrets.get(ctx, "groq_key")
+        var err = "kein Modell"
+        for ((model, voice) in listOf("canopylabs/orpheus-v1-english" to "daniel", "playai-tts" to "Atlas-PlayAI")) {
+            val body = JSONObject().put("model", model).put("input", text).put("voice", voice).put("response_format", "wav")
+            val (code, bytes) = http("https://api.groq.com/openai/v1/audio/speech",
+                mapOf("Authorization" to "Bearer $key", "Content-Type" to "application/json"), body.toString())
+            if (code == 200) return parseWav(bytes) ?: throw IllegalStateException("WAV nicht lesbar")
+            err = "$model $code ${String(bytes).take(100)}"
+        }
+        throw IllegalStateException("Groq-TTS: $err")
+    }
+
+    // ---------- Polly-Stimmen (Brian = britisch) ueber StreamElements, ohne Schluessel ----------
+    private fun pollyTts(ctx: Context, text: String): Pair<ShortArray, Int> {
+        val voice = if (Lang.en(ctx)) "Brian" else "Hans"
+        val url = "https://api.streamelements.com/kappa/v2/speech?voice=$voice&text=" + URLEncoder.encode(text.take(450), "UTF-8")
+        val c = URL(url).openConnection() as HttpURLConnection
+        c.connectTimeout = 10000; c.readTimeout = 20000
+        c.setRequestProperty("User-Agent", EDGE_UA)
+        if (c.responseCode != 200) throw IllegalStateException("Polly ${c.responseCode}")
+        val bytes = c.inputStream.use { it.readBytes() }
+        c.disconnect()
+        return decodeToPcm(bytes) ?: throw IllegalStateException("MP3 nicht lesbar")
     }
 
     // ---------- Edge (Microsoft Neural, kostenlos, ohne Schluessel) ----------
