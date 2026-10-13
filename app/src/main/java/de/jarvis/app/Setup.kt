@@ -28,7 +28,10 @@ enum class Step(val title: String, val text: String) {
     BATTERY("Hintergrundbetrieb", "Damit ich dich auch informieren kann, wenn die App geschlossen ist, benötige ich Hintergrundbetrieb. Tippe auf der nächsten Seite auf „Zulassen“."),
     ACCESSIBILITY("Handy-Steuerung (optional)", "Damit ich Apps bedienen kann (z. B. in YouTube etwas suchen), aktiviere JARVIS unter „Bedienungshilfen“. Ist der Schalter grau: App-Info öffnen, oben rechts ⋮ tippen und „Eingeschränkte Einstellungen zulassen“ wählen."),
     OVERLAY("Apps im Hintergrund öffnen (optional)", "Erlaube „Über anderen Apps einblenden“, damit ich Apps auch öffnen kann, wenn JARVIS im Hintergrund läuft."),
-    ASSISTANT("Standard-Assistent (optional)", "Wähle JARVIS als „Digitaler Assistent“. Dann startest du mich wie den Google Assistant, z. B. mit Home-Taste halten oder Wischgeste von der Ecke.")
+    ASSISTANT("Standard-Assistent (optional)", "Wähle JARVIS als „Digitaler Assistent“. Dann startest du mich wie den Google Assistant, z. B. mit Home-Taste halten oder Wischgeste von der Ecke."),
+    NOTIFICATION_ACCESS("Benachrichtigungszugriff (Island)", "Damit die Dynamic Island Musik, Timer und Anrufe anzeigen kann, erlaube JARVIS den Zugriff auf Benachrichtigungen. Ist der Schalter grau: App-Info öffnen, oben rechts ⋮ tippen und „Eingeschränkte Einstellungen zulassen“ wählen.");
+
+    val optional: Boolean get() = this == ACCESSIBILITY || this == OVERLAY || this == ASSISTANT || this == NOTIFICATION_ACCESS
 }
 
 object Perms {
@@ -45,6 +48,7 @@ object Perms {
         Step.ACCESSIBILITY -> JarvisAccessibilityService.instance != null ||
             (Settings.Secure.getString(ctx.contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES) ?: "").contains(ctx.packageName)
         Step.OVERLAY -> Settings.canDrawOverlays(ctx)
+        Step.NOTIFICATION_ACCESS -> NotificationManagerCompat.getEnabledListenerPackages(ctx).contains(ctx.packageName)
         Step.ASSISTANT -> try {
             if (Build.VERSION.SDK_INT >= 29) ctx.getSystemService(android.app.role.RoleManager::class.java).isRoleHeld(android.app.role.RoleManager.ROLE_ASSISTANT)
             else (Settings.Secure.getString(ctx.contentResolver, "assistant") ?: "").contains(ctx.packageName)
@@ -55,7 +59,7 @@ object Perms {
 
     fun request(ctx: Context, step: Step, retry: Boolean, launch: (Array<String>) -> Unit) {
         val uri = Uri.parse("package:${ctx.packageName}")
-        if (retry && (isRuntime(step) || step == Step.ACCESSIBILITY)) { open(ctx, Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, uri)); return }
+        if (retry && (isRuntime(step) || step == Step.ACCESSIBILITY || step == Step.NOTIFICATION_ACCESS)) { open(ctx, Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, uri)); return }
         when (step) {
             Step.NOTIFICATIONS ->
                 if (Build.VERSION.SDK_INT >= 33) launch(arrayOf(Manifest.permission.POST_NOTIFICATIONS))
@@ -67,6 +71,7 @@ object Perms {
             Step.BATTERY -> open(ctx, Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, uri))
             Step.ACCESSIBILITY -> open(ctx, Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
             Step.OVERLAY -> open(ctx, Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, uri))
+            Step.NOTIFICATION_ACCESS -> open(ctx, Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
             Step.ASSISTANT -> try { ctx.startActivity(Intent(Settings.ACTION_VOICE_INPUT_SETTINGS)) } catch (e: Exception) { open(ctx, Intent(Settings.ACTION_MANAGE_DEFAULT_APPS_SETTINGS)) }
         }
     }

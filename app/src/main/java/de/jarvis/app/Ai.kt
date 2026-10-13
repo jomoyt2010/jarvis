@@ -237,6 +237,7 @@ object Ai {
             listOf("create_watch", "list_watches", "delete_watch")),
         Triple("device", Regex("akku|batterie|lädt|ladestand|gerätestatus", RegexOption.IGNORE_CASE),
             listOf("get_device_status")),
+        Triple("island", Regex("insel|island|dynamic", RegexOption.IGNORE_CASE), listOf("island_config", "island_notify")),
         Triple("phone", Regex("öffne|starte|\\bapp\\b|youtube|spotify|whatsapp|instagram|netflix|navig|route|karte|maps|anrufen|sms|lautstärke|leiser|lauter|musik|pause|nächster|bildschirm|tippe|klick|scroll|kamera|einstellungen|suche in|such .* (auf|bei)", RegexOption.IGNORE_CASE),
             listOf("open_app", "youtube_search", "open_url", "navigate", "dial_number", "draft_sms", "media_control", "set_volume",
                 "ui_read_screen", "ui_click", "ui_type", "ui_scroll", "ui_press")))

@@ -19,6 +19,7 @@ class JarvisService : Service() {
             startForeground(Notifications.SERVICE_ID, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
         else startForeground(Notifications.SERVICE_ID, n)
         running = true
+        Island.apply(this)
         return START_STICKY
     }
 

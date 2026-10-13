@@ -55,6 +55,11 @@
         <service android:name=".ListenService" android:exported="false"
             android:foregroundServiceType="microphone" />
 
+        <service android:name=".IslandListener" android:exported="true" android:label="JARVIS Dynamic Island"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter><action android:name="android.service.notification.NotificationListenerService" /></intent-filter>
+        </service>
+
         <service android:name=".JarvisAccessibilityService" android:exported="true"
             android:label="@string/a11y_label"
             android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">

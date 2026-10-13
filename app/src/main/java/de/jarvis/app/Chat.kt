@@ -145,12 +145,13 @@ fun ChatScreen(listenTick: Int) {
         val q = t.trim()
         if ((q.isEmpty() && pending.isEmpty()) || busy) return
         val files = pending.toList(); pending.clear()
-        Ai.chat.add(ChatMsg(true, q, files = files.map { it.name }, thumbs = files.mapNotNull { it.thumb }))
+        Ai.chat.add(ChatMsg(true, q, files = files.map { it.name }, thumbs = files.mapNotNull { it.thumb })); IslandHub.setJarvis("thinking", "")
         input = ""; busy = true
         scope.launch {
             val r = withContext(Dispatchers.IO) { Ai.ask(ctx.applicationContext, q, files, viaMic) }
             Ai.chat.add(ChatMsg(false, r.text, r.sources, model = r.model))
             busy = false
+            IslandHub.setJarvis("", "")
             if (ttsEnabled(ctx) && (viaMic || r.text.length <= 400)) Voice.speak(ctx.applicationContext, r.text)
         }
     }
@@ -362,6 +363,8 @@ fun SettingsScreen(resumeTick: Int = 0) {
         }
         item { SecretRow("Google-Cloud-TTS-Schlüssel", "gtts_key", "Optional: Chirp-3-HD-Stimme, 1 Mio. Zeichen/Monat gratis (Google-Cloud-Konto mit Rechnungskonto nötig).") }
         item { VoiceIdField("Google-Stimme (z. B. de-DE-Chirp3-HD-Charon)", "voice_google") }
+
+        item { IslandSettings(resumeTick) }
 
         item { Text("Handy-Steuerung & Assistent", style = MaterialTheme.typography.titleMedium, color = Cyan) }
         item { PermRow(Step.ACCESSIBILITY, "Apps bedienen (Bedienungshilfe)", resumeTick) }

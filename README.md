@@ -39,3 +39,7 @@ Standard-Assistent (Voice Interaction Service), Sprache Deutsch/Englisch, weiter
 ## Version 0.5
 KI: Router (schnelles Modell) + Experten, Anbieter Groq/Mistral/OpenRouter/Cerebras/Gemini, nur passende Tools pro Anfrage.
 Stimmen: Edge-KI, Groq-KI (EN), Polly, Gemini, Google; JARVIS wird richtig ausgesprochen; "Alle Stimmen testen".
+
+## Version 0.6
+Dynamic Island: Overlay an der Kamera (Breite/Höhe/Position einstellbar, Auto-Erkennung), zeigt Musik, Timer, Anrufe und JARVIS-Zustand.
+Benötigt: "Über anderen Apps einblenden" + Benachrichtigungszugriff.

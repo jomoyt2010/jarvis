@@ -68,7 +68,7 @@ fun SetupFlow(resumeTick: Int, prefs: Prefs, onFinished: () -> Unit) {
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { tick++ }
 
     val current = remember(resumeTick, tick, skipped) {
-        Step.entries.firstOrNull { it.name !in skipped && !Perms.isGranted(ctx, it) }
+        Step.entries.firstOrNull { !it.optional && it.name !in skipped && !Perms.isGranted(ctx, it) }
     }
 
     fun request(step: Step) {
@@ -89,8 +89,8 @@ fun SetupFlow(resumeTick: Int, prefs: Prefs, onFinished: () -> Unit) {
         !started -> Welcome { started = true }
         current != null -> StepScreen(
             step = current,
-            index = Step.entries.indexOf(current) + 1,
-            total = Step.entries.size,
+            index = Step.entries.filter { !it.optional }.indexOf(current) + 1,
+            total = Step.entries.count { !it.optional },
             retry = current in attempted,
             onGo = { request(current) },
             onSkip = { skip(current.name) })

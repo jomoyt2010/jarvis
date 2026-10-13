@@ -89,7 +89,8 @@ object Voice {
         val text = clean(raw, Lang.en(ctx))
         if (text.isEmpty()) return@withContext
         val r = render(ctx, text) ?: return@withContext
-        play(r.first, r.second)
+        IslandHub.setJarvis("speaking", text)
+        try { play(r.first, r.second) } finally { IslandHub.setJarvis("", "") }
     }
 
     private suspend fun render(ctx: Context, text: String): Pair<ShortArray, Int>? {

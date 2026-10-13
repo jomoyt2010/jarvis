@@ -36,7 +36,8 @@ object ToolRegistry {
         SearchWebTool, ListMailTool, ReadMailTool, SendMailTool,
         CreateWatchTool, ListWatchesTool, DeleteWatchTool,
         OpenAppTool, YouTubeSearchTool, OpenUrlTool, NavigateTool, DialTool, SmsDraftTool, MediaControlTool, VolumeTool,
-        UiReadTool, UiClickTool, UiTypeTool, UiScrollTool, UiPressTool)
+        UiReadTool, UiClickTool, UiTypeTool, UiScrollTool, UiPressTool,
+        IslandConfigTool, IslandNotifyTool)
     fun find(name: String) = all.firstOrNull { it.name == name }
 }
 

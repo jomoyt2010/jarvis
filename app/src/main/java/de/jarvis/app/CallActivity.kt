@@ -129,7 +129,7 @@ class CallActivity : ComponentActivity() {
             var silent = 0
             while (isActive) {
                 while (muted) { phase = "Stumm"; delay(300) }
-                phase = "Ich höre zu …"
+                phase = "Ich höre zu …"; IslandHub.setJarvis("listening", "")
                 val heard = listenOnce()
                 if (heard == null) {
                     if (++silent >= 2) { say("Ich lege dann mal auf. Bis später."); break }
@@ -137,7 +137,7 @@ class CallActivity : ComponentActivity() {
                 }
                 silent = 0
                 if (isGoodbye(heard)) { say("Alles klar. Bis bald."); break }
-                phase = "Denke nach …"
+                phase = "Denke nach …"; IslandHub.setJarvis("thinking", "")
                 Ai.chat.add(ChatMsg(true, heard))
                 val r = withContext(Dispatchers.IO) { Ai.ask(applicationContext, context + heard, emptyList(), true) }
                 context = ""
@@ -185,6 +185,7 @@ class CallActivity : ComponentActivity() {
     private fun endCall() {
         if (ended) return
         ended = true
+        IslandHub.setJarvis("", "")
         if (accepted) tone(ToneGenerator.TONE_PROP_BEEP2, 400)
         callJob?.cancel()
         Voice.stop()

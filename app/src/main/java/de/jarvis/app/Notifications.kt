@@ -15,6 +15,7 @@ class JarvisApp : Application() {
         super.onCreate()
         Notifications.createChannels(this)
         Proactive.schedule(this)
+        Island.apply(this)
     }
 }
 
