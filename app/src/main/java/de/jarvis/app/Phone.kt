@@ -1,6 +1,10 @@
 package de.jarvis.app
 
 import android.accessibilityservice.AccessibilityService
+import android.accessibilityservice.GestureDescription
+import android.graphics.Bitmap
+import android.graphics.Path
+import android.view.Display
 import android.content.Context
 import android.content.Intent
 import android.media.AudioManager
@@ -106,7 +110,59 @@ class JarvisAccessibilityService : AccessibilityService() {
         "home" -> performGlobalAction(GLOBAL_ACTION_HOME)
         "recents" -> performGlobalAction(GLOBAL_ACTION_RECENTS)
         "notifications" -> performGlobalAction(GLOBAL_ACTION_NOTIFICATIONS)
+        "quick_settings" -> performGlobalAction(GLOBAL_ACTION_QUICK_SETTINGS)
+        "power_menu" -> performGlobalAction(GLOBAL_ACTION_POWER_DIALOG)
+        "lock" -> if (Build.VERSION.SDK_INT >= 28) performGlobalAction(GLOBAL_ACTION_LOCK_SCREEN) else false
+        "screenshot" -> if (Build.VERSION.SDK_INT >= 28) performGlobalAction(GLOBAL_ACTION_TAKE_SCREENSHOT) else false
         else -> false
+    }
+
+    private fun gesture(path: Path, ms: Long): Boolean = try {
+        dispatchGesture(GestureDescription.Builder().addStroke(GestureDescription.StrokeDescription(path, 0, ms)).build(), null, null)
+    } catch (e: Exception) { false }
+
+    fun tap(xPct: Float, yPct: Float, long: Boolean = false): Boolean {
+        val dm = resources.displayMetrics
+        val p = Path().apply { moveTo(dm.widthPixels * xPct / 100f, dm.heightPixels * yPct / 100f) }
+        return gesture(p, if (long) 700L else 60L)
+    }
+
+    fun swipe(x1: Float, y1: Float, x2: Float, y2: Float, ms: Long = 350L): Boolean {
+        val dm = resources.displayMetrics
+        val p = Path().apply {
+            moveTo(dm.widthPixels * x1 / 100f, dm.heightPixels * y1 / 100f)
+            lineTo(dm.widthPixels * x2 / 100f, dm.heightPixels * y2 / 100f)
+        }
+        return gesture(p, ms)
+    }
+
+    fun screenshot(cb: (Bitmap?) -> Unit) {
+        if (Build.VERSION.SDK_INT < 30) { cb(null); return }
+        try {
+            takeScreenshot(Display.DEFAULT_DISPLAY, mainExecutor, object : AccessibilityService.TakeScreenshotCallback {
+                override fun onSuccess(result: AccessibilityService.ScreenshotResult) {
+                    val hw = result.hardwareBuffer
+                    val bmp = Bitmap.wrapHardwareBuffer(hw, result.colorSpace)?.copy(Bitmap.Config.ARGB_8888, false)
+                    hw.close()
+                    cb(bmp)
+                }
+                override fun onFailure(errorCode: Int) { cb(null) }
+            })
+        } catch (e: Exception) { cb(null) }
+    }
+
+    fun clickExact(label: String): Boolean {
+        fun walk(n: AccessibilityNodeInfo?): AccessibilityNodeInfo? {
+            if (n == null) return null
+            val t = n.text?.toString()?.trim()
+            val d = n.contentDescription?.toString()?.trim()
+            if (t.equals(label, true) || d.equals(label, true)) return n
+            for (i in 0 until n.childCount) { val r = walk(n.getChild(i)); if (r != null) return r }
+            return null
+        }
+        var cur: AccessibilityNodeInfo? = walk(rootInActiveWindow)
+        while (cur != null && !cur.isClickable) cur = cur.parent
+        return cur?.performAction(AccessibilityNodeInfo.ACTION_CLICK) == true
     }
 
     companion object { @Volatile var instance: JarvisAccessibilityService? = null }
@@ -163,6 +219,12 @@ object OpenAppTool : JarvisTool {
         val i = pm.getLaunchIntentForPackage(hit.first) ?: return "Die App lässt sich nicht öffnen."
         if (!launch(ctx, i)) return "Öffnen fehlgeschlagen."
         delay(1300)
+        val sv = JarvisAccessibilityService.instance
+        if (sv != null && sv.currentPackage() != hit.first) {
+            // Wie ein Mensch: Home-Bildschirm und App-Symbol antippen
+            sv.press("home"); delay(700)
+            if (sv.click(hit.second)) delay(1500)
+        }
         return "${hit.second} geöffnet." + blockedHint(hit.first)
     }
 }
@@ -270,6 +332,7 @@ object UiClickTool : JarvisTool {
     override suspend fun run(ctx: Context, args: JSONObject): String {
         val s = a11y(ctx) ?: return NEED_A11Y
         val t = args.getString("text")
+        if (LearnMode.running && RISKY.containsMatchIn(t)) return "Im Lernmodus nicht erlaubt."
         if (RISKY.containsMatchIn(t) && !Confirm.ask("JARVIS möchte auf „$t“ tippen. Erlauben?", "ERLAUBEN", "ABBRECHEN", "Handy-Steuerung"))
             return "Der Nutzer hat das Tippen abgelehnt."
         val ok = s.click(t)
@@ -284,6 +347,7 @@ object UiTypeTool : JarvisTool {
     override val schema = """{"type":"object","properties":{"text":{"type":"string"},"submit":{"type":"boolean"}},"required":["text"]}"""
     override suspend fun run(ctx: Context, args: JSONObject): String {
         val s = a11y(ctx) ?: return NEED_A11Y
+        if (LearnMode.running) return "Im Lernmodus wird nicht getippt."
         when (s.type(args.getString("text"))) {
             -1 -> return "Das ist ein Passwortfeld. Das tippe ich nicht."
             0 -> return "Kein Eingabefeld gefunden. Tippe zuerst auf das Suchfeld.\n" + s.readScreen(30)
@@ -309,9 +373,10 @@ object UiScrollTool : JarvisTool {
 object UiPressTool : JarvisTool {
     override val name = "ui_press"
     override val description = "Drückt eine System-Taste: back, home, recents, notifications."
-    override val schema = """{"type":"object","properties":{"button":{"type":"string","enum":["back","home","recents","notifications"]}},"required":["button"]}"""
+    override val schema = """{"type":"object","properties":{"button":{"type":"string","enum":["back","home","recents","notifications","quick_settings","lock","screenshot","power_menu"]}},"required":["button"]}"""
     override suspend fun run(ctx: Context, args: JSONObject): String {
         val s = a11y(ctx) ?: return NEED_A11Y
+        if (LearnMode.running && args.getString("button") in setOf("lock", "power_menu")) return "Im Lernmodus nicht erlaubt."
         val ok = s.press(args.getString("button"))
         delay(700)
         return (if (ok) "Erledigt.\n" else "Fehlgeschlagen.\n") + s.readScreen(25)

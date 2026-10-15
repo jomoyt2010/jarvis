@@ -306,9 +306,20 @@ fun SettingsScreen(resumeTick: Int = 0) {
         item { Spacer(Modifier.height(8.dp)); Text("Einstellungen", style = MaterialTheme.typography.titleLarge, color = Cyan) }
 
         item { Text("KI (Router + Experten, alles kostenlos)", style = MaterialTheme.typography.titleMedium, color = Cyan) }
-        item { Text("JARVIS fragt zuerst ein sehr schnelles Modell. Schwere Aufgaben gibt es automatisch an stärkere Modelle weiter. Mit mehreren Schlüsseln stößt du viel seltener an ein Gratis-Limit. Empfohlen: Groq und Mistral.", fontSize = 11.sp, color = Color.Gray) }
-        Oai.all.forEach { p -> item { SecretBlock(p.label + "-Schlüssel", p.keyName, p.keyUrl, p.getLabel) } }
+        item { Text("JARVIS fragt zuerst ein sehr schnelles Modell. Schwere Aufgaben gibt es automatisch an stärkere Modelle weiter. Mit mehreren Schlüsseln stößt du viel seltener an ein Gratis-Limit. Empfohlen: Groq und GitHub-Modelle (ChatGPT/Grok).", fontSize = 11.sp, color = Color.Gray) }
+        item { SecretBlock("Groq-Schlüssel (Grok)", "groq_key", "https://console.groq.com/keys", "Kostenlosen Groq-Schlüssel holen") }
         item { SecretBlock("Gemini-Schlüssel", "gemini_key", "https://aistudio.google.com/apikey", "Kostenlosen Gemini-Schlüssel holen") }
+        item {
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text("ChatGPT und Grok kostenlos über GitHub-Modelle", fontSize = 13.sp, color = Cyan)
+                Text("1. Unten auf den Button tippen und bei GitHub anmelden.\n2. Name „JARVIS“, Ablauf 1 Jahr.\n3. Bei „Account permissions“ → „Models“ auf „Read“ stellen.\n4. „Generate token“ tippen, Token kopieren und hier einfügen.", fontSize = 11.sp, color = Color.Gray)
+                SecretBlock("GitHub-Token", "github_key", "https://github.com/settings/personal-access-tokens/new", "GitHub-Token erstellen")
+            }
+        }
+        item { Text("Optional und kostenpflichtig (nur aktiv, wenn du einen eigenen Schlüssel einträgst):", fontSize = 11.sp, color = Color.Gray) }
+        item { SecretBlock("ChatGPT (OpenAI-Schlüssel)", "openai_key", "https://platform.openai.com/api-keys", "OpenAI-Schlüssel holen") }
+        item { SecretBlock("Claude (Anthropic-Schlüssel)", "anthropic_key", "https://console.anthropic.com/settings/keys", "Anthropic-Schlüssel holen") }
+        item { SwitchRow("Bezahlte Anbieter bevorzugen", "ai_paid_first", false) }
         item {
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 OutlinedButton(onClick = { scope.launch { aiTest = "Teste …"; aiTest = Ai.diagnose(ctx.applicationContext) } }) { Text("KI testen") }
@@ -361,8 +372,12 @@ fun SettingsScreen(resumeTick: Int = 0) {
             if (testInfo.isNotBlank()) Text(testInfo, fontSize = 11.sp, color = Color.Gray)
             OutlinedButton(onClick = { scope.launch { testInfo = "Teste alle Stimmen …"; testInfo = Voice.diagnose(ctx.applicationContext) } }) { Text("Alle Stimmen testen") }
         }
+        item { PrefSlider("Sprechtempo", "voice_speed", -30, 60, 12, " %") }
+        item { PrefSlider("Stimmlage", "voice_pitch", -40, 10, -8, " Hz") }
         item { SecretRow("Google-Cloud-TTS-Schlüssel", "gtts_key", "Optional: Chirp-3-HD-Stimme, 1 Mio. Zeichen/Monat gratis (Google-Cloud-Konto mit Rechnungskonto nötig).") }
         item { VoiceIdField("Google-Stimme (z. B. de-DE-Chirp3-HD-Charon)", "voice_google") }
+
+        item { ProfileAndLearnSettings(resumeTick) }
 
         item { IslandSettings(resumeTick) }
 

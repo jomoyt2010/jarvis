@@ -122,10 +122,10 @@ class CallActivity : ComponentActivity() {
         scope.launch { while (isActive) { delay(1000); seconds++ } }
         callJob = scope.launch {
             val en = Lang.en(this@CallActivity)
-            say(if (outgoing) (if (intent.getBooleanExtra("assist", false)) (if (en) "Yes?" else "Ja?") else if (en) "JARVIS here. How may I help?" else "Hier ist JARVIS. Was kann ich für dich tun?")
+            say(if (intent.getBooleanExtra("interview", false)) "Hallo, ich bin JARVIS. Ich möchte dich besser kennenlernen. Wie darf ich dich nennen?" else if (outgoing) (if (intent.getBooleanExtra("assist", false)) (if (en) "Yes?" else "Ja?") else if (en) "JARVIS here. How may I help?" else "Hier ist JARVIS. Was kann ich für dich tun?")
                 else text.ifBlank { "Hier ist JARVIS." })
             if (!Perms.isGranted(this@CallActivity, Step.MIC)) { say("Mir fehlt die Mikrofon-Erlaubnis. Ich lege auf."); endCall(); return@launch }
-            var context = if (outgoing) "" else "[Kontext: Du hast den Nutzer gerade angerufen und gesagt: \"$text\"] "
+            var context = if (intent.getBooleanExtra("interview", false)) "[Kontext: Kennenlern-Gespräch. Der Nutzer erlaubt ausdrücklich, dass du Persönliches speicherst. Stelle nacheinander kurze Fragen (Name und Anrede, Beruf oder Alltag, Interessen, Tagesablauf, Musik, wie du mit ihm sprechen sollst) und speichere jede Antwort sofort mit dem Tool remember. Pro Runde nur eine Frage.] " else if (outgoing) "" else "[Kontext: Du hast den Nutzer gerade angerufen und gesagt: \"$text\"] "
             var silent = 0
             while (isActive) {
                 while (muted) { phase = "Stumm"; delay(300) }

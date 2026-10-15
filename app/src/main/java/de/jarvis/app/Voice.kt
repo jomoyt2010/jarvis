@@ -15,6 +15,8 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -77,30 +79,57 @@ object Voice {
 
     private fun clean(raw: String, en: Boolean) = raw
         .replace(Regex("https?://\\S+"), "").replace(Regex("(?m)^\\s*[-*•]\\s+"), "")
-        .replace(Regex("[*_#`]"), "").replace(Regex("(?i)\\bjarvis\\b"), if (en) "Jarvis" else "Dschaarwis").trim().take(600)
+        .replace(Regex("[*_#`]"), "").replace(Regex("(?i)\\bjarvis\\b"), if (en) "Jarvis" else "Dschaarwis").trim().take(900)
+
+    /** Text in kurze Teile zerlegen, damit das Sprechen schon nach dem ersten Satz beginnt. */
+    private fun chunks(text: String): List<String> {
+        val out = ArrayList<String>()
+        var rest = text.trim()
+        var first = true
+        while (rest.isNotEmpty()) {
+            val max = if (first) 140 else 260
+            if (rest.length <= max) { out.add(rest); break }
+            val head = rest.take(max)
+            var cut = head.lastIndexOfAny(charArrayOf('.', '!', '?', ';', ':'))
+            if (cut < max / 3) cut = head.lastIndexOf(',')
+            if (cut < max / 3) cut = head.lastIndexOf(' ')
+            if (cut < 1) cut = max - 1
+            out.add(rest.substring(0, cut + 1).trim())
+            rest = rest.substring(cut + 1).trim()
+            first = false
+        }
+        return out
+    }
 
     /** Sprache schon vorab erzeugen (z. B. waehrend das Handy klingelt). */
     fun prefetch(ctx: Context, raw: String) {
         val app = ctx.applicationContext
-        bg.launch { try { render(app, clean(raw, Lang.en(app))) } catch (_: Exception) {} }
+        bg.launch { try { chunks(clean(raw, Lang.en(app))).firstOrNull()?.let { render(app, it) } } catch (_: Exception) {} }
     }
 
+    /** Spricht in Teilen: waehrend Teil 1 laeuft, wird Teil 2 schon erzeugt. */
     suspend fun speak(ctx: Context, raw: String) = withContext(Dispatchers.IO) {
         val text = clean(raw, Lang.en(ctx))
         if (text.isEmpty()) return@withContext
-        val r = render(ctx, text) ?: return@withContext
+        val parts = chunks(text)
         IslandHub.setJarvis("speaking", text)
-        try { play(r.first, r.second) } finally { IslandHub.setJarvis("", "") }
+        try {
+            coroutineScope {
+                val ch = Channel<Pair<ShortArray, Int>?>(1)
+                val producer = launch { try { for (p in parts) ch.send(render(ctx, p)) } finally { ch.close() } }
+                try { for (r in ch) { if (r != null) play(r.first, r.second) } } finally { producer.cancel() }
+            }
+        } finally { IslandHub.setJarvis("", "") }
     }
 
     private suspend fun render(ctx: Context, text: String): Pair<ShortArray, Int>? {
         val sp0 = appPrefs(ctx)
-        val ck = text + "\u0000" + listOf("voice_engine", "voice_edge", "voice_edge_en", "lang", "voice_google", "voice_eleven")
-            .joinToString("|") { sp0.getString(it, "") ?: "" } + sp0.getFloat("robot", 0.5f)
+        val ck = text + "\u0000" + listOf("voice_engine", "voice_edge", "voice_edge_en", "lang", "voice_google", "voice_eleven", "voice_speed", "voice_pitch")
+            .joinToString("|") { sp0.all[it]?.toString() ?: "" } + sp0.getFloat("robot", 0.5f)
         synchronized(cache) { cache[ck] }?.let { return it }
         val s = synth(ctx, text) ?: return null
         val out = robotize(s.pcm, s.rate, appPrefs(ctx).getFloat("robot", 0.5f))
-        val res = out to (if (s.engine == "phone") s.rate else (s.rate * 0.97).roundToInt())
+        val res = out to s.rate
         synchronized(cache) { cache[ck] = res; while (cache.size > 4) cache.remove(cache.keys.first()) }
         return res
     }
@@ -118,7 +147,7 @@ object Voice {
                 if (r != null) { lastEngine = e; return Synth(r.first, r.second, e) }
             } catch (ex: Exception) {
                 lastError += "$e: ${ex.message}; "
-                blocked[e] = now + (if (e == "eleven" || e == "google") 600_000 else 90_000)
+                blocked[e] = now + when (e) { "eleven", "google" -> 600_000L; "edge" -> 25_000L; else -> 60_000L }
             }
         }
         return null
@@ -186,6 +215,8 @@ object Voice {
         val voice = if (Lang.en(ctx)) appPrefs(ctx).getString("voice_edge_en", "en-GB-ThomasNeural") ?: "en-GB-ThomasNeural"
         else appPrefs(ctx).getString("voice_edge", "de-DE-ConradNeural") ?: "de-DE-ConradNeural"
         var lastFail = "unbekannt"
+        val speedPct = appPrefs(ctx).getInt("voice_speed", 12)
+        val pitchHz = appPrefs(ctx).getInt("voice_pitch", -8)
         for (attempt in 0 until 2) {
             val mp3 = ByteArrayOutputStream()
             val done = CountDownLatch(1)
@@ -195,7 +226,7 @@ object Voice {
             val url = "wss://speech.platform.bing.com/consumer/speech/synthesize/readaloud/edge/v1?TrustedClientToken=$EDGE_TOKEN" +
                 "&Sec-MS-GEC=${secMsGec()}&Sec-MS-GEC-Version=$EDGE_VER&ConnectionId=$reqId"
             val muid = UUID.randomUUID().toString().replace("-", "").uppercase()
-            val client = OkHttpClient.Builder().connectTimeout(8, TimeUnit.SECONDS).readTimeout(20, TimeUnit.SECONDS).build()
+            val client = OkHttpClient.Builder().connectTimeout(6, TimeUnit.SECONDS).readTimeout(10, TimeUnit.SECONDS).build()
             val req = Request.Builder().url(url)
                 .header("Pragma", "no-cache").header("Cache-Control", "no-cache")
                 .header("Origin", "chrome-extension://jdiccldimpdaibmpdkjnbmckianbfold")
@@ -207,7 +238,7 @@ object Voice {
             val longName = "Microsoft Server Speech Text to Speech Voice (${parts[0]}-${parts[1]}, ${parts.drop(2).joinToString("-")})"
             val esc = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
             val ssml = "<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='${parts[0]}-${parts[1]}'><voice name='$longName'>" +
-                "<prosody pitch='-10Hz' rate='-3%' volume='+0%'>$esc</prosody></voice></speak>"
+                "<prosody pitch='${if (pitchHz >= 0) "+$pitchHz" else "$pitchHz"}Hz' rate='${if (speedPct >= 0) "+$speedPct" else "$speedPct"}%' volume='+0%'>$esc</prosody></voice></speak>"
             val ws = client.newWebSocket(req, object : WebSocketListener() {
                 override fun onOpen(webSocket: WebSocket, response: Response) {
                     webSocket.send("X-Timestamp:$ts\r\nContent-Type:application/json; charset=utf-8\r\nPath:speech.config\r\n\r\n" +
@@ -232,11 +263,11 @@ object Voice {
                 }
                 override fun onClosed(webSocket: WebSocket, code: Int, reason: String) { done.countDown() }
             })
-            done.await(20, TimeUnit.SECONDS)
+            done.await(10, TimeUnit.SECONDS)
             try { ws.close(1000, null) } catch (_: Exception) {}
             client.dispatcher.executorService.shutdown()
             if (mp3.size() > 0) return decodeToPcm(mp3.toByteArray()) ?: throw IllegalStateException("MP3 nicht lesbar")
-            if (!(failed && retry)) break
+            if (!failed) break
         }
         throw IllegalStateException("Edge: $lastFail")
     }
@@ -319,7 +350,7 @@ object Voice {
             @Deprecated("Deprecated in Java")
             override fun onError(utteranceId: String?) { done.complete(false) }
         })
-        t.setPitch(0.72f); t.setSpeechRate(0.95f)
+        t.setPitch(0.72f); t.setSpeechRate((1f + appPrefs(ctx).getInt("voice_speed", 12) / 100f).coerceIn(0.6f, 2f))
         t.synthesizeToFile(text, null, f, "jarvis")
         val ok = withTimeoutOrNull(20000) { done.await() } == true
         val bytes = if (ok && f.exists()) f.readBytes() else null

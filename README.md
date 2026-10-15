@@ -43,3 +43,8 @@ Stimmen: Edge-KI, Groq-KI (EN), Polly, Gemini, Google; JARVIS wird richtig ausge
 ## Version 0.6
 Dynamic Island: Overlay an der Kamera (Breite/Höhe/Position einstellbar, Auto-Erkennung), zeigt Musik, Timer, Anrufe und JARVIS-Zustand.
 Benötigt: "Über anderen Apps einblenden" + Benachrichtigungszugriff.
+
+## Version 0.7
+KI: Groq, Gemini (400-Fix), ChatGPT/Grok kostenlos über GitHub-Modelle, Claude/OpenAI optional.
+Handy-Steuerung: Gesten, Screenshot-Auswertung, Sperrbildschirm, Neustart; Lernmodus (5 Min.), Profil, Kennenlern-Gespräch.
+Stimme: satzweises Sprechen, Tempo/Stimmlage einstellbar.
